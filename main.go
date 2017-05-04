@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/url"
 	"os"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/google/go-github/github"
 	"github.com/yosida95/golang-jenkins"
+	"golang.org/x/oauth2"
 	"gopkg.in/gin-gonic/gin.v1"
 
 	log "github.com/Sirupsen/logrus"
@@ -19,6 +21,7 @@ type config struct {
 	password          string
 	baseURL           string
 	githubSecret      []byte
+	githubToken       string
 	watchRepositories []string
 }
 
@@ -28,6 +31,7 @@ func getConfig() config {
 	password := os.Getenv("JENKINS_PASSWORD")
 	url := os.Getenv("JENKINS_BASE_URL")
 	githubSecret := os.Getenv("GITHUB_SECRET")
+	githubToken := os.Getenv("GITHUB_TOKEN")
 
 	defaultWatchRepositories := "deployments,deviceadm,deviceauth,inventory,useradm,integration,mender,meta-mender"
 	watchRepositories := os.Getenv("WATCH_REPOS")
@@ -54,13 +58,28 @@ func getConfig() config {
 		panic("set GITHUB_SECRET")
 	}
 
-	return config{username, password, url, []byte(githubSecret), repositoryWatchList}
+	if githubToken == "" {
+		panic("set GITHUB_TOKEN")
+	}
+
+	return config{username, password, url, []byte(githubSecret), githubToken, repositoryWatchList}
+}
+
+func createGitHubClient(conf config) *github.Client {
+	ctx := context.Background()
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: conf.githubToken},
+	)
+	tc := oauth2.NewClient(ctx, ts)
+
+	return github.NewClient(tc)
 }
 
 func main() {
 	conf := getConfig()
 	log.Infoln("using config: ", spew.Sdump(conf))
 
+	githubClient := createGitHubClient(conf)
 	r := gin.Default()
 
 	r.POST("/incoming", func(context *gin.Context) {
@@ -76,8 +95,13 @@ func main() {
 			pr := event.(*github.PullRequestEvent)
 			action := pr.GetAction()
 
-			log.Info("Pull request event with action: ", action)
+			member, _, _ := githubClient.Organizations.IsMember(context, "mendersoftware", pr.Sender.GetLogin())
+			if !member {
+				log.Warnf("%s is making a pullrequest, but he's not a member of mendersoftware, ignoring", pr.Sender.GetLogin())
+				return
+			}
 
+			log.Info("Pull request event with action: ", action)
 			// github pull request events to trigger a jenkins job for
 			if action == "opened" || action == "edited" || action == "reopened" || action == "synchronize" {
 				repo := *pr.Repo.Name
