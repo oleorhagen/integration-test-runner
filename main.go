@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"net/url"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
@@ -28,9 +30,10 @@ type config struct {
 	watchRepositories          []string
 	integrationBranchDependant []string
 	integrationDirectory       string
+	lock                       sync.Mutex
 }
 
-func getConfig() (config, error) {
+func getConfig() (*config, error) {
 	var repositoryWatchList []string
 	username := os.Getenv("JENKINS_USERNAME")
 	password := os.Getenv("JENKINS_PASSWORD")
@@ -77,20 +80,20 @@ func getConfig() (config, error) {
 
 	switch {
 	case username == "":
-		return config{}, fmt.Errorf("set JENKINS_USERNAME")
+		return &config{}, fmt.Errorf("set JENKINS_USERNAME")
 	case password == "":
-		return config{}, fmt.Errorf("set JENKINS_PASSWORD")
+		return &config{}, fmt.Errorf("set JENKINS_PASSWORD")
 	case url == "":
-		return config{}, fmt.Errorf("set JENKINS_BASE_URL")
+		return &config{}, fmt.Errorf("set JENKINS_BASE_URL")
 	case githubSecret == "":
-		return config{}, fmt.Errorf("set GITHUB_SECRET")
+		return &config{}, fmt.Errorf("set GITHUB_SECRET")
 	case githubToken == "":
-		return config{}, fmt.Errorf("set GITHUB_TOKEN")
+		return &config{}, fmt.Errorf("set GITHUB_TOKEN")
 	case integrationDirectory == "":
-		return config{}, fmt.Errorf("set INTEGRATION_DIRECTORY")
+		return &config{}, fmt.Errorf("set INTEGRATION_DIRECTORY")
 	}
 
-	return config{
+	return &config{
 		username:                   username,
 		password:                   password,
 		baseURL:                    url,
@@ -102,7 +105,7 @@ func getConfig() (config, error) {
 	}, nil
 }
 
-func createGitHubClient(conf *config) *github.Client {
+func (conf *config) createGitHubClient() *github.Client {
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: conf.githubToken},
@@ -121,7 +124,7 @@ func main() {
 
 	log.Infoln("using settings: ", spew.Sdump(conf))
 
-	githubClient := createGitHubClient(&conf)
+	githubClient := conf.createGitHubClient()
 	r := gin.Default()
 
 	r.POST("/incoming", func(context *gin.Context) {
@@ -144,7 +147,11 @@ func main() {
 			}
 
 			action := pr.GetAction()
-			parsePullRequest(action, pr, &conf)
+
+			// parse one pull request at a time since we are running some git commands
+			conf.lock.Lock()
+			conf.parsePullRequest(action, pr)
+			conf.lock.Unlock()
 
 		} else if github.WebHookType(context.Request) == "pull_request_review" {
 			prReview := event.(*github.PullRequestReviewEvent)
@@ -160,7 +167,7 @@ func main() {
 	r.Run("0.0.0.0:8081")
 }
 
-func parsePullRequest(action string, pr *github.PullRequestEvent, conf *config) {
+func (conf *config) parsePullRequest(action string, pr *github.PullRequestEvent) {
 	log.Info("Pull request event with action: ", action)
 
 	// github pull request events to trigger a jenkins job for
@@ -170,16 +177,31 @@ func parsePullRequest(action string, pr *github.PullRequestEvent, conf *config) 
 
 		//GetLabel returns "mendersoftware:master", we just want the branch
 		baseBranch := strings.Split(pr.PullRequest.Base.GetLabel(), ":")[1]
+
 		makeQEMU := false
+		buildContainers := false
 
 		for _, watchRepo := range conf.watchRepositories {
+
+			// make sure the repo that the pull request is performed against is
+			// one that we are watching.
+
 			if watchRepo == repo {
 				if repo == "mender" || repo == "meta-mender" || repo == "mender-artifact" {
 					makeQEMU = true
 				}
 
+				if action == "merge" {
+					if repo == "mender" || repo == "meta-mender" {
+						buildContainers = true
+					} else {
+						// if this is a merge, and it's not for mender or meta-mender, we arent interested.
+						return
+					}
+				}
+
 				// we need to have the latest integration/master branch in order to use the release_tool.py
-				if err := updateIntegrationRepo(conf); err != nil {
+				if err := conf.updateIntegrationRepo(); err != nil {
 					log.Warnf(err.Error())
 				}
 
@@ -198,12 +220,18 @@ func parsePullRequest(action string, pr *github.PullRequestEvent, conf *config) 
 					}
 				}
 
-				for _, baseBranch := range integrationsToTest {
-					err := triggerBuild(conf, strconv.Itoa(pr.GetNumber()), repo, baseBranch, commitSHA, makeQEMU)
+				for _, integrationBranch := range integrationsToTest {
+					err := conf.triggerBuild(strconv.Itoa(pr.GetNumber()),
+						repo,
+						integrationBranch,
+						commitSHA,
+						makeQEMU,
+						buildContainers)
+
 					if err != nil {
 						log.Warnf("errored starting jenkins builds with: %s\n", err.Error())
 					} else {
-						log.Warnf("started new jenkins job for pr: %d, repo: %s, commit: %s, branch: %s\n", pr.GetNumber(), repo, commitSHA, baseBranch)
+						log.Warnf("started new jenkins job for pr: %d, repo: %s, commit: %s, branch: %s\n", pr.GetNumber(), repo, commitSHA, integrationBranch)
 					}
 				}
 			}
@@ -211,13 +239,14 @@ func parsePullRequest(action string, pr *github.PullRequestEvent, conf *config) 
 	}
 }
 
-func triggerBuild(c *config, pr, repo, baseBranch, commitSHA string, makeQEMU bool) error {
+func (conf *config) triggerBuild(pr, repo, baseBranch, commitSHA string, makeQEMU, buildContainers bool) error {
+
 	auth := &gojenkins.Auth{
-		Username: c.username,
-		ApiToken: c.password,
+		Username: conf.username,
+		ApiToken: conf.password,
 	}
 
-	jenkins := gojenkins.NewJenkins(auth, c.baseURL)
+	jenkins := gojenkins.NewJenkins(auth, conf.baseURL)
 	job, err := jenkins.GetJob("mender-builder")
 
 	if err != nil {
@@ -227,11 +256,23 @@ func triggerBuild(c *config, pr, repo, baseBranch, commitSHA string, makeQEMU bo
 	readHead := "pull/" + pr + "/head"
 	buildParameter := url.Values{}
 
-	for _, watchRepo := range c.watchRepositories {
+	for _, watchRepo := range conf.watchRepositories {
 		// don't set build parameter for the repo we are building, since we set that later
 		// and use the default "master" for both mender-qa, and meta-mender (set in Jenkins)
 		if watchRepo != repo && watchRepo != "mender-qa" && watchRepo != "meta-mender" {
-			buildParameter.Add(repoToJenkinsParameter(watchRepo), baseBranch)
+			if watchRepo == "mender-artifact" {
+				// mender-artifact also needs special treatment
+				if maVersion, err := getMenderArtifactRevisionFromIntegration(baseBranch); err != nil {
+					log.Errorln("failed to determine mender-artifact version: " + err.Error())
+					return err
+				} else {
+					fmt.Println("mender-artifact: ", maVersion)
+					buildParameter.Add(repoToJenkinsParameter(watchRepo), maVersion)
+				}
+			} else {
+				buildParameter.Add(repoToJenkinsParameter(watchRepo), baseBranch)
+			}
+
 		}
 	}
 
@@ -248,6 +289,10 @@ func triggerBuild(c *config, pr, repo, baseBranch, commitSHA string, makeQEMU bo
 	if makeQEMU {
 		buildParameter.Add("TEST_QEMU", "true")
 		buildParameter.Add("BUILD_QEMU", "true")
+	}
+
+	if buildContainers {
+		buildParameter.Add("BUILD_CONTAINERS", "true")
 	}
 
 	return jenkins.Build(job, buildParameter)
@@ -281,7 +326,7 @@ func getIntegrationVersionsUsingMicroservice(repo, version string, conf *config)
 	return branches, nil
 }
 
-func updateIntegrationRepo(conf *config) error {
+func (conf *config) updateIntegrationRepo() error {
 	gitcmd := exec.Command("git", "pull", "--rebase", "origin")
 	gitcmd.Dir = conf.integrationDirectory
 
@@ -306,4 +351,29 @@ func isDependantOnIntegration(repo string, conf *config) bool {
 		}
 	}
 	return false
+}
+
+func getMenderArtifactRevisionFromIntegration(baseBranch string) (string, error) {
+	tmp, _ := ioutil.TempDir("/var/tmp", "mender-integration")
+	defer os.RemoveAll(tmp)
+
+	gitcmd := exec.Command("git", "clone", "-b", baseBranch, "https://github.com/mendersoftware/integration.git", tmp)
+
+	// timeout and kill process after 10 seconds
+	t := time.AfterFunc(10*time.Second, func() {
+		gitcmd.Process.Kill()
+	})
+	defer t.Stop()
+
+	if err := gitcmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to 'git pull' integration folder: %s\n", err.Error())
+	}
+
+	c := exec.Command(tmp+"/extra/release_tool.py", "--version-of", "mender-artifact")
+
+	if maVersion, err := c.Output(); err != nil {
+		return "", fmt.Errorf("failed to get mender-artifact version using relese tool: %s\n", err.Error())
+	} else {
+		return strings.TrimSpace(string(maVersion)), nil
+	}
 }
