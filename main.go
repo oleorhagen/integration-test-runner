@@ -21,6 +21,8 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
+var mutex = &sync.Mutex{}
+
 type config struct {
 	username                   string
 	password                   string
@@ -30,8 +32,20 @@ type config struct {
 	watchRepositories          []string
 	integrationBranchDependant []string
 	integrationDirectory       string
-	lock                       sync.Mutex
 }
+
+type buildOptions struct {
+	pr             string
+	repo           string
+	baseBranch     string
+	commitSHA      string
+	makeQEMU       bool
+	pushContainers bool
+}
+
+const (
+	GIT_OPERATION_TIMEOUT = 30
+)
 
 func getConfig() (*config, error) {
 	var repositoryWatchList []string
@@ -105,7 +119,7 @@ func getConfig() (*config, error) {
 	}, nil
 }
 
-func (conf *config) createGitHubClient() *github.Client {
+func createGitHubClient(conf *config) *github.Client {
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: conf.githubToken},
@@ -124,7 +138,7 @@ func main() {
 
 	log.Infoln("using settings: ", spew.Sdump(conf))
 
-	githubClient := conf.createGitHubClient()
+	githubClient := createGitHubClient(conf)
 	r := gin.Default()
 
 	r.POST("/incoming", func(context *gin.Context) {
@@ -139,19 +153,21 @@ func main() {
 		if github.WebHookType(context.Request) == "pull_request" {
 			pr := event.(*github.PullRequestEvent)
 
-			member, _, _ := githubClient.Organizations.IsMember(context, "mendersoftware", pr.Sender.GetLogin())
-
-			if !member {
+			if member, _, _ := githubClient.Organizations.IsMember(context, "mendersoftware", pr.Sender.GetLogin()); !member {
 				log.Warnf("%s is making a pullrequest, but he's not a member of mendersoftware, ignoring", pr.Sender.GetLogin())
 				return
 			}
 
 			action := pr.GetAction()
 
-			// parse one pull request at a time since we are running some git commands
-			conf.lock.Lock()
-			conf.parsePullRequest(action, pr)
-			conf.lock.Unlock()
+			// make sure we only parse one pr at a time, since we use git
+			mutex.Lock()
+			builds := parsePullRequest(conf, action, pr)
+			mutex.Unlock()
+
+			for _, build := range builds {
+				go triggerBuild(conf, &build)
+			}
 
 		} else if github.WebHookType(context.Request) == "pull_request_review" {
 			prReview := event.(*github.PullRequestReviewEvent)
@@ -167,13 +183,15 @@ func main() {
 	r.Run("0.0.0.0:8081")
 }
 
-func (conf *config) parsePullRequest(action string, pr *github.PullRequestEvent) {
+func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) []buildOptions {
 	log.Info("Pull request event with action: ", action)
+	builds := make([]buildOptions, 0)
+
+	repo := *pr.Repo.Name
+	commitSHA := pr.PullRequest.Head.GetSHA()
 
 	// github pull request events to trigger a jenkins job for
 	if action == "opened" || action == "edited" || action == "reopened" || action == "synchronize" {
-		repo := *pr.Repo.Name
-		commitSHA := pr.PullRequest.Head.GetSHA()
 
 		//GetLabel returns "mendersoftware:master", we just want the branch
 		baseBranch := strings.Split(pr.PullRequest.Base.GetLabel(), ":")[1]
@@ -182,7 +200,6 @@ func (conf *config) parsePullRequest(action string, pr *github.PullRequestEvent)
 		buildContainers := false
 
 		for _, watchRepo := range conf.watchRepositories {
-
 			// make sure the repo that the pull request is performed against is
 			// one that we are watching.
 
@@ -191,17 +208,17 @@ func (conf *config) parsePullRequest(action string, pr *github.PullRequestEvent)
 					makeQEMU = true
 				}
 
-				if action == "merge" {
+				if action == "merge" || action == "closed" {
 					if repo == "mender" || repo == "meta-mender" {
 						buildContainers = true
 					} else {
-						// if this is a merge, and it's not for mender or meta-mender, we arent interested.
-						return
+						// if this is a merge, and it's not for mender or meta-mender, we aren't interested.
+						return nil
 					}
 				}
 
 				// we need to have the latest integration/master branch in order to use the release_tool.py
-				if err := conf.updateIntegrationRepo(); err != nil {
+				if err := updateIntegrationRepo(conf); err != nil {
 					log.Warnf(err.Error())
 				}
 
@@ -220,27 +237,31 @@ func (conf *config) parsePullRequest(action string, pr *github.PullRequestEvent)
 					}
 				}
 
+				// one pull request can trigger multiple builds
 				for _, integrationBranch := range integrationsToTest {
-					err := conf.triggerBuild(strconv.Itoa(pr.GetNumber()),
-						repo,
-						integrationBranch,
-						commitSHA,
-						makeQEMU,
-						buildContainers)
-
-					if err != nil {
-						log.Warnf("errored starting jenkins builds with: %s\n", err.Error())
-					} else {
-						log.Warnf("started new jenkins job for pr: %d, repo: %s, commit: %s, branch: %s\n", pr.GetNumber(), repo, commitSHA, integrationBranch)
+					buildOpts := buildOptions{
+						pr:             strconv.Itoa(pr.GetNumber()),
+						repo:           repo,
+						baseBranch:     integrationBranch,
+						commitSHA:      commitSHA,
+						makeQEMU:       makeQEMU,
+						pushContainers: buildContainers,
 					}
+					builds = append(builds, buildOpts)
 				}
 			}
 		}
 	}
+
+	log.Infof("%s:%d triggered %d builds: \n", repo, pr.GetNumber(), len(builds))
+	for idx, build := range builds {
+		log.Infof("%d: "+spew.Sdump(build)+"\n", idx+1)
+	}
+
+	return builds
 }
 
-func (conf *config) triggerBuild(pr, repo, baseBranch, commitSHA string, makeQEMU, buildContainers bool) error {
-
+func triggerBuild(conf *config, build *buildOptions) error {
 	auth := &gojenkins.Auth{
 		Username: conf.username,
 		ApiToken: conf.password,
@@ -253,46 +274,48 @@ func (conf *config) triggerBuild(pr, repo, baseBranch, commitSHA string, makeQEM
 		return nil
 	}
 
-	readHead := "pull/" + pr + "/head"
+	readHead := "pull/" + build.pr + "/head"
 	buildParameter := url.Values{}
 
 	for _, watchRepo := range conf.watchRepositories {
 		// don't set build parameter for the repo we are building, since we set that later
 		// and use the default "master" for both mender-qa, and meta-mender (set in Jenkins)
-		if watchRepo != repo && watchRepo != "mender-qa" && watchRepo != "meta-mender" {
+		if watchRepo != build.repo && watchRepo != "mender-qa" && watchRepo != "meta-mender" {
 			if watchRepo == "mender-artifact" {
 				// mender-artifact also needs special treatment
-				if maVersion, err := getMenderArtifactRevisionFromIntegration(baseBranch); err != nil {
+				if maVersion, err := getMenderArtifactRevisionFromIntegration(build.baseBranch); err != nil {
 					log.Errorln("failed to determine mender-artifact version: " + err.Error())
 					return err
 				} else {
-					fmt.Println("mender-artifact: ", maVersion)
+					log.Info("mender-artifact version is: ", maVersion)
 					buildParameter.Add(repoToJenkinsParameter(watchRepo), maVersion)
 				}
 			} else {
-				buildParameter.Add(repoToJenkinsParameter(watchRepo), baseBranch)
+				buildParameter.Add(repoToJenkinsParameter(watchRepo), build.baseBranch)
 			}
-
 		}
 	}
 
 	// we dont watch for "gui" pr, since we don't test it here, so we must include it manually
-	buildParameter.Add("GUI_REV", baseBranch)
+	buildParameter.Add("GUI_REV", build.baseBranch)
 
 	// set the rest of the jenkins build parameters
-	buildParameter.Add("PR_TO_TEST", pr)
-	buildParameter.Add("REPO_TO_TEST", repo)
-	buildParameter.Add("BASE_BRANCH", baseBranch)
-	buildParameter.Add("GIT_COMMIT", commitSHA)
-	buildParameter.Add(repoToJenkinsParameter(repo), readHead)
+	buildParameter.Add("PR_TO_TEST", build.pr)
+	buildParameter.Add("REPO_TO_TEST", build.repo)
+	buildParameter.Add("BASE_BRANCH", build.baseBranch)
+	buildParameter.Add("GIT_COMMIT", build.commitSHA)
+	buildParameter.Add("RUN_INTEGRATION_TESTS", "true")
+	buildParameter.Add(repoToJenkinsParameter(build.repo), readHead)
 
-	if makeQEMU {
-		buildParameter.Add("TEST_QEMU", "true")
+	if build.makeQEMU {
 		buildParameter.Add("BUILD_QEMU", "true")
+		buildParameter.Add("BUILD_BBB", "true")
+
+		buildParameter.Add("TEST_QEMU", "true")
 	}
 
-	if buildContainers {
-		buildParameter.Add("BUILD_CONTAINERS", "true")
+	if build.pushContainers {
+		buildParameter.Add("PUSH_CONTAINERS", "true")
 	}
 
 	return jenkins.Build(job, buildParameter)
@@ -326,12 +349,12 @@ func getIntegrationVersionsUsingMicroservice(repo, version string, conf *config)
 	return branches, nil
 }
 
-func (conf *config) updateIntegrationRepo() error {
+func updateIntegrationRepo(conf *config) error {
 	gitcmd := exec.Command("git", "pull", "--rebase", "origin")
 	gitcmd.Dir = conf.integrationDirectory
 
-	// timeout and kill process after 10 seconds
-	t := time.AfterFunc(10*time.Second, func() {
+	// timeout and kill process after GIT_OPERATION_TIMEOUT seconds
+	t := time.AfterFunc(GIT_OPERATION_TIMEOUT*time.Second, func() {
 		gitcmd.Process.Kill()
 	})
 	defer t.Stop()
@@ -339,8 +362,6 @@ func (conf *config) updateIntegrationRepo() error {
 	if err := gitcmd.Run(); err != nil {
 		return fmt.Errorf("failed to 'git pull' integration folder: %s\n", err.Error())
 	}
-	fmt.Println("updated integration directory successfully")
-
 	return nil
 }
 
@@ -359,8 +380,8 @@ func getMenderArtifactRevisionFromIntegration(baseBranch string) (string, error)
 
 	gitcmd := exec.Command("git", "clone", "-b", baseBranch, "https://github.com/mendersoftware/integration.git", tmp)
 
-	// timeout and kill process after 10 seconds
-	t := time.AfterFunc(10*time.Second, func() {
+	// timeout and kill process after GIT_OPERATION_TIMEOUT seconds
+	t := time.AfterFunc(GIT_OPERATION_TIMEOUT*time.Second, func() {
 		gitcmd.Process.Kill()
 	})
 	defer t.Stop()
