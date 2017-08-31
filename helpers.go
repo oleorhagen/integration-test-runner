@@ -53,15 +53,6 @@ func updateIntegrationRepo(conf *config) error {
 	return nil
 }
 
-func isDependantOnIntegration(repo string, conf *config) bool {
-	for _, e := range conf.integrationBranchDependant {
-		if repo == e {
-			return true
-		}
-	}
-	return false
-}
-
 // The parameter that jenkins uses for repo specific revisions is <REPO_NAME>_REV
 func repoToJenkinsParameter(repo string) string {
 	repoRevision := strings.ToUpper(repo) + "_REV"

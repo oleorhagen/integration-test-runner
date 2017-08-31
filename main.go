@@ -53,18 +53,6 @@ func getConfig() (*config, error) {
 	githubToken := os.Getenv("GITHUB_TOKEN")
 	integrationDirectory := os.Getenv("INTEGRATION_DIRECTORY")
 
-	// repos that require to be tested with specific integration branches
-	integrationBranchDependant :=
-		[]string{
-			"deployments",
-			"deviceadm",
-			"deviceauth",
-			"useradm",
-			"inventory",
-			"mender-api-gateway-docker",
-			"mender",
-		}
-
 	// if no env. variable is set, this is the default repo watch list
 	defaultWatchRepositories :=
 		[]string{
@@ -104,14 +92,13 @@ func getConfig() (*config, error) {
 	}
 
 	return &config{
-		username:                   username,
-		password:                   password,
-		baseURL:                    url,
-		githubSecret:               []byte(githubSecret),
-		githubToken:                githubToken,
-		watchRepositories:          repositoryWatchList,
-		integrationBranchDependant: integrationBranchDependant,
-		integrationDirectory:       integrationDirectory,
+		username:             username,
+		password:             password,
+		baseURL:              url,
+		githubSecret:         []byte(githubSecret),
+		githubToken:          githubToken,
+		watchRepositories:    repositoryWatchList,
+		integrationDirectory: integrationDirectory,
 	}, nil
 }
 
@@ -210,30 +197,41 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 					log.Warnf(err.Error())
 				}
 
-				// by default, the integration branch will be master..
-				integrationsToTest := []string{"master"}
-
-				// unless what we are testing is dependant on our integration branch.
-				if isDependantOnIntegration(repo, conf) {
-					var err error
-					if integrationsToTest, err = getIntegrationVersionsUsingMicroservice(repo, baseBranch, conf); err != nil {
-						log.Fatalf("failed to get related microservices for repo: %s version: %s, failed with: %s\n", repo, baseBranch, err.Error())
-					}
-					log.Infof("the following integration branches: %s are using %s/%s", integrationsToTest, repo, baseBranch)
-				}
-
-				// one pull request can trigger multiple builds
-				for _, integrationBranch := range integrationsToTest {
-					buildOpts := buildOptions{
+				switch repo {
+				case "meta-mender", "integration":
+					build := buildOptions{
 						pr:             strconv.Itoa(pr.GetNumber()),
 						repo:           repo,
-						baseBranch:     integrationBranch,
+						baseBranch:     baseBranch,
 						commitSHA:      commitSHA,
 						makeQEMU:       makeQEMU,
 						pushContainers: buildContainers,
 					}
-					builds = append(builds, buildOpts)
+					builds = append(builds, build)
+
+				case "deployments", "deviceadm", "deviceauth", "useradm", "inventory", "mender-api-gateway-docker", "mender":
+					var err error
+					integrationsToTest := []string{}
+
+					if integrationsToTest, err = getIntegrationVersionsUsingMicroservice(repo, baseBranch, conf); err != nil {
+						log.Fatalf("failed to get related microservices for repo: %s version: %s, failed with: %s\n", repo, baseBranch, err.Error())
+					}
+					log.Infof("the following integration branches: %s are using %s/%s", integrationsToTest, repo, baseBranch)
+
+					// one pull request can trigger multiple builds
+					for _, integrationBranch := range integrationsToTest {
+						buildOpts := buildOptions{
+							pr:             strconv.Itoa(pr.GetNumber()),
+							repo:           repo,
+							baseBranch:     integrationBranch,
+							commitSHA:      commitSHA,
+							makeQEMU:       makeQEMU,
+							pushContainers: buildContainers,
+						}
+						builds = append(builds, buildOpts)
+					}
 				}
+
 			}
 		}
 	}
@@ -258,12 +256,15 @@ func triggerBuild(conf *config, build *buildOptions) error {
 	buildParameter := url.Values{}
 
 	for _, watchRepo := range conf.watchRepositories {
-		// don't set build parameter for the repo we are building, since we set that later
-		// and use the default "master" for both mender-qa, and meta-mender (set in Jenkins)
+		// iterate over all the repositories (except the one we are testing) and
+		// set the correct microservice versions
+
+		// use the default "master" for both mender-qa, and meta-mender (set in Jenkins)
 		if watchRepo != build.repo &&
 			watchRepo != "mender-qa" &&
 			watchRepo != "meta-mender" &&
-			watchRepo != "integration" {
+			watchRepo != "integration" &&
+			build.repo != "meta-mender" {
 			if version, err := getServiceRevisionFromIntegration(watchRepo, build.baseBranch); err != nil {
 				log.Errorf("failed to determine %s version: %s", watchRepo, err.Error())
 				return err
@@ -275,11 +276,16 @@ func triggerBuild(conf *config, build *buildOptions) error {
 	}
 
 	// we dont watch for "gui" pr, since we don't test it here, so we must include it manually
-	buildParameter.Add("GUI_REV", build.baseBranch)
+	buildParameter.Add("GUI_REV", "master")
 
 	// set the correct integraton branches if we aren't performing a pull request again integration
-	if build.repo != "integration" {
+	if build.repo != "integration" && build.repo != "meta-mender" {
 		buildParameter.Add(repoToJenkinsParameter("integration"), build.baseBranch)
+	}
+
+	// set the poky branch equal to the meta-mender base branch
+	if build.repo == "meta-mender" {
+		buildParameter.Add(repoToJenkinsParameter("poky"), build.baseBranch)
 	}
 
 	// set the rest of the jenkins build parameters
