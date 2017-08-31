@@ -3,14 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/google/go-github/github"
@@ -63,7 +60,6 @@ func getConfig() (*config, error) {
 			"deviceadm",
 			"deviceauth",
 			"useradm",
-			"integration",
 			"inventory",
 			"mender-api-gateway-docker",
 			"mender",
@@ -163,29 +159,21 @@ func main() {
 			// make sure we only parse one pr at a time, since we use git
 			mutex.Lock()
 			builds := parsePullRequest(conf, action, pr)
+			log.Infof("%s:%d triggered %d builds: \n", *pr.Repo.Name, pr.GetNumber(), len(builds))
 			mutex.Unlock()
 
-			for _, build := range builds {
-				go triggerBuild(conf, &build)
-			}
-
-		} else if github.WebHookType(context.Request) == "pull_request_review" {
-			prReview := event.(*github.PullRequestReviewEvent)
-			member, _, _ := githubClient.Organizations.IsMember(context, "mendersoftware", prReview.PullRequest.User.GetLogin())
-
-			if !member {
-				log.Warnf("%s is making a pullrequest review event, but he's not a member of mendersoftware, ignoring", prReview.PullRequest.User.GetLogin())
-				return
+			for idx, build := range builds {
+				log.Infof("%d: "+spew.Sdump(build)+"\n", idx+1)
+				triggerBuild(conf, &build)
 			}
 		}
-
 	})
 	r.Run("0.0.0.0:8081")
 }
 
 func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) []buildOptions {
 	log.Info("Pull request event with action: ", action)
-	builds := make([]buildOptions, 0)
+	var builds []buildOptions
 
 	repo := *pr.Repo.Name
 	commitSHA := pr.PullRequest.Head.GetSHA()
@@ -227,14 +215,11 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 
 				// unless what we are testing is dependant on our integration branch.
 				if isDependantOnIntegration(repo, conf) {
-					if repo == "integration" {
-						integrationsToTest = []string{baseBranch}
-					} else {
-						var err error
-						if integrationsToTest, err = getIntegrationVersionsUsingMicroservice(repo, baseBranch, conf); err != nil {
-							log.Warnf("failed to get related microservices for repo: %s version: %s, failed with: %s\n", repo, baseBranch, err.Error())
-						}
+					var err error
+					if integrationsToTest, err = getIntegrationVersionsUsingMicroservice(repo, baseBranch, conf); err != nil {
+						log.Fatalf("failed to get related microservices for repo: %s version: %s, failed with: %s\n", repo, baseBranch, err.Error())
 					}
+					log.Infof("the following integration branches: %s are using %s/%s", integrationsToTest, repo, baseBranch)
 				}
 
 				// one pull request can trigger multiple builds
@@ -251,11 +236,6 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 				}
 			}
 		}
-	}
-
-	log.Infof("%s:%d triggered %d builds: \n", repo, pr.GetNumber(), len(builds))
-	for idx, build := range builds {
-		log.Infof("%d: "+spew.Sdump(build)+"\n", idx+1)
 	}
 
 	return builds
@@ -280,24 +260,27 @@ func triggerBuild(conf *config, build *buildOptions) error {
 	for _, watchRepo := range conf.watchRepositories {
 		// don't set build parameter for the repo we are building, since we set that later
 		// and use the default "master" for both mender-qa, and meta-mender (set in Jenkins)
-		if watchRepo != build.repo && watchRepo != "mender-qa" && watchRepo != "meta-mender" {
-			if watchRepo == "mender-artifact" {
-				// mender-artifact also needs special treatment
-				if maVersion, err := getMenderArtifactRevisionFromIntegration(build.baseBranch); err != nil {
-					log.Errorln("failed to determine mender-artifact version: " + err.Error())
-					return err
-				} else {
-					log.Info("mender-artifact version is: ", maVersion)
-					buildParameter.Add(repoToJenkinsParameter(watchRepo), maVersion)
-				}
+		if watchRepo != build.repo &&
+			watchRepo != "mender-qa" &&
+			watchRepo != "meta-mender" &&
+			watchRepo != "integration" {
+			if version, err := getServiceRevisionFromIntegration(watchRepo, build.baseBranch); err != nil {
+				log.Errorf("failed to determine %s version: %s", watchRepo, err.Error())
+				return err
 			} else {
-				buildParameter.Add(repoToJenkinsParameter(watchRepo), build.baseBranch)
+				log.Infof("%s version %s is being used in %s: ", watchRepo, version, build.baseBranch)
+				buildParameter.Add(repoToJenkinsParameter(watchRepo), version)
 			}
 		}
 	}
 
 	// we dont watch for "gui" pr, since we don't test it here, so we must include it manually
 	buildParameter.Add("GUI_REV", build.baseBranch)
+
+	// set the correct integraton branches if we aren't performing a pull request again integration
+	if build.repo != "integration" {
+		buildParameter.Add(repoToJenkinsParameter("integration"), build.baseBranch)
+	}
 
 	// set the rest of the jenkins build parameters
 	buildParameter.Add("PR_TO_TEST", build.pr)
@@ -318,83 +301,6 @@ func triggerBuild(conf *config, build *buildOptions) error {
 		buildParameter.Add("PUSH_CONTAINERS", "true")
 	}
 
+	log.Infof("build started: %s", spew.Sdump(buildParameter))
 	return jenkins.Build(job, buildParameter)
-}
-
-// The parameter that jenkins uses for repo specific revisions is <REPO_NAME>_REV
-func repoToJenkinsParameter(repo string) string {
-	repoRevision := strings.ToUpper(repo) + "_REV"
-	return strings.Replace(repoRevision, "-", "_", -1)
-}
-
-// Use python script in order to determine which integration branches to test with
-func getIntegrationVersionsUsingMicroservice(repo, version string, conf *config) ([]string, error) {
-	c := exec.Command("release_tool.py", "--integration-versions-including", repo, "--version", version)
-	c.Dir = conf.integrationDirectory + "/extra/"
-	integrations, err := c.Output()
-
-	if err != nil {
-		return nil, err
-	}
-
-	branches := strings.Split(strings.TrimSpace(string(integrations)), "\n")
-
-	// remove the remote (ex: "`origin`/1.0.x")
-	for idx, branch := range branches {
-		if strings.Contains(branch, "/") {
-			branches[idx] = strings.Split(branch, "/")[1]
-		}
-	}
-
-	return branches, nil
-}
-
-func updateIntegrationRepo(conf *config) error {
-	gitcmd := exec.Command("git", "pull", "--rebase", "origin")
-	gitcmd.Dir = conf.integrationDirectory
-
-	// timeout and kill process after GIT_OPERATION_TIMEOUT seconds
-	t := time.AfterFunc(GIT_OPERATION_TIMEOUT*time.Second, func() {
-		gitcmd.Process.Kill()
-	})
-	defer t.Stop()
-
-	if err := gitcmd.Run(); err != nil {
-		return fmt.Errorf("failed to 'git pull' integration folder: %s\n", err.Error())
-	}
-	return nil
-}
-
-func isDependantOnIntegration(repo string, conf *config) bool {
-	for _, e := range conf.integrationBranchDependant {
-		if repo == e {
-			return true
-		}
-	}
-	return false
-}
-
-func getMenderArtifactRevisionFromIntegration(baseBranch string) (string, error) {
-	tmp, _ := ioutil.TempDir("/var/tmp", "mender-integration")
-	defer os.RemoveAll(tmp)
-
-	gitcmd := exec.Command("git", "clone", "-b", baseBranch, "https://github.com/mendersoftware/integration.git", tmp)
-
-	// timeout and kill process after GIT_OPERATION_TIMEOUT seconds
-	t := time.AfterFunc(GIT_OPERATION_TIMEOUT*time.Second, func() {
-		gitcmd.Process.Kill()
-	})
-	defer t.Stop()
-
-	if err := gitcmd.Run(); err != nil {
-		return "", fmt.Errorf("failed to 'git pull' integration folder: %s\n", err.Error())
-	}
-
-	c := exec.Command(tmp+"/extra/release_tool.py", "--version-of", "mender-artifact")
-
-	if maVersion, err := c.Output(); err != nil {
-		return "", fmt.Errorf("failed to get mender-artifact version using relese tool: %s\n", err.Error())
-	} else {
-		return strings.TrimSpace(string(maVersion)), nil
-	}
 }
