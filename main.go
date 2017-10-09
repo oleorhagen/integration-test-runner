@@ -299,6 +299,7 @@ func triggerBuild(conf *config, build *buildOptions) error {
 	if build.makeQEMU {
 		buildParameter.Add("BUILD_QEMU", "true")
 		buildParameter.Add("BUILD_BBB", "true")
+		buildParameter.Add("BUILD_RPI3", "true")
 
 		buildParameter.Add("TEST_QEMU", "true")
 	}
