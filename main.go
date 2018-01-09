@@ -209,15 +209,7 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 					}
 					builds = append(builds, build)
 
-				case "deployments",
-					"deviceadm",
-					"deviceauth",
-					"useradm",
-					"inventory",
-					"mender-api-gateway-docker",
-					"mender",
-					"mender-artifact":
-
+				default:
 					var err error
 					integrationsToTest := []string{}
 
