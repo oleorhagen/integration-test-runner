@@ -209,7 +209,15 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 					}
 					builds = append(builds, build)
 
-				case "deployments", "deviceadm", "deviceauth", "useradm", "inventory", "mender-api-gateway-docker", "mender":
+				case "deployments",
+					"deviceadm",
+					"deviceauth",
+					"useradm",
+					"inventory",
+					"mender-api-gateway-docker",
+					"mender",
+					"mender-artifact":
+
 					var err error
 					integrationsToTest := []string{}
 
@@ -276,7 +284,7 @@ func triggerBuild(conf *config, build *buildOptions) error {
 	}
 
 	// we dont watch for "gui" pr, since we don't test it here, so we must include it manually
-	buildParameter.Add("GUI_REV", "master")
+	//buildParameter.Add("GUI_REV", "master")
 
 	// set the correct integraton branches if we aren't performing a pull request again integration
 	if build.repo != "integration" && build.repo != "meta-mender" {
