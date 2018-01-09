@@ -32,12 +32,12 @@ type config struct {
 }
 
 type buildOptions struct {
-	pr             string
-	repo           string
-	baseBranch     string
-	commitSHA      string
-	makeQEMU       bool
-	pushContainers bool
+	pr               string
+	repo             string
+	baseBranch       string
+	commitSHA        string
+	makeQEMU         bool
+	publishArtifacts bool
 }
 
 const (
@@ -200,24 +200,16 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 				switch repo {
 				case "meta-mender", "integration":
 					build := buildOptions{
-						pr:             strconv.Itoa(pr.GetNumber()),
-						repo:           repo,
-						baseBranch:     baseBranch,
-						commitSHA:      commitSHA,
-						makeQEMU:       makeQEMU,
-						pushContainers: buildContainers,
+						pr:               strconv.Itoa(pr.GetNumber()),
+						repo:             repo,
+						baseBranch:       baseBranch,
+						commitSHA:        commitSHA,
+						makeQEMU:         makeQEMU,
+						publishArtifacts: buildContainers,
 					}
 					builds = append(builds, build)
 
-				case "deployments",
-					"deviceadm",
-					"deviceauth",
-					"useradm",
-					"inventory",
-					"mender-api-gateway-docker",
-					"mender",
-					"mender-artifact":
-
+				default:
 					var err error
 					integrationsToTest := []string{}
 
@@ -229,12 +221,12 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 					// one pull request can trigger multiple builds
 					for _, integrationBranch := range integrationsToTest {
 						buildOpts := buildOptions{
-							pr:             strconv.Itoa(pr.GetNumber()),
-							repo:           repo,
-							baseBranch:     integrationBranch,
-							commitSHA:      commitSHA,
-							makeQEMU:       makeQEMU,
-							pushContainers: buildContainers,
+							pr:               strconv.Itoa(pr.GetNumber()),
+							repo:             repo,
+							baseBranch:       integrationBranch,
+							commitSHA:        commitSHA,
+							makeQEMU:         makeQEMU,
+							publishArtifacts: buildContainers,
 						}
 						builds = append(builds, buildOpts)
 					}
@@ -304,16 +296,27 @@ func triggerBuild(conf *config, build *buildOptions) error {
 	buildParameter.Add("RUN_INTEGRATION_TESTS", "true")
 	buildParameter.Add(repoToJenkinsParameter(build.repo), readHead)
 
+	var qemuParam string
 	if build.makeQEMU {
-		buildParameter.Add("BUILD_QEMU", "true")
-		buildParameter.Add("BUILD_BBB", "true")
-		buildParameter.Add("BUILD_RPI3", "true")
-
-		buildParameter.Add("TEST_QEMU", "true")
+		qemuParam = "true"
+	} else {
+		qemuParam = ""
 	}
 
-	if build.pushContainers {
-		buildParameter.Add("PUSH_CONTAINERS", "true")
+	buildParameter.Add("BUILD_QEMU_SDIMG", qemuParam)
+	buildParameter.Add("TEST_QEMU_SDIMG", qemuParam)
+
+	buildParameter.Add("BUILD_QEMU_RAW_FLASH", qemuParam)
+	buildParameter.Add("TEST_QEMU_RAW_FLASH", qemuParam)
+
+	buildParameter.Add("BUILD_BEAGLEBONEBLACK", qemuParam)
+	buildParameter.Add("TEST_BEAGLEBONEBLACK", qemuParam)
+
+	buildParameter.Add("BUILD_RASPBERRYPI3", qemuParam)
+	buildParameter.Add("TEST_RASPBERRYPI3", qemuParam)
+
+	if build.publishArtifacts {
+		buildParameter.Add("PUBLISH_ARTIFACTS", "true")
 	}
 
 	log.Infof("build started: %s", spew.Sdump(buildParameter))
