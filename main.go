@@ -63,7 +63,6 @@ func getConfig() (*config, error) {
 			"useradm",
 			"integration",
 			"mender",
-			"mender-qa",
 			"mender-artifact",
 			"meta-mender",
 			"mender-api-gateway-docker"}
@@ -261,7 +260,6 @@ func triggerBuild(conf *config, build *buildOptions) error {
 
 		// use the default "master" for both mender-qa, and meta-mender (set in Jenkins)
 		if watchRepo != build.repo &&
-			watchRepo != "mender-qa" &&
 			watchRepo != "meta-mender" &&
 			watchRepo != "integration" &&
 			build.repo != "meta-mender" {
