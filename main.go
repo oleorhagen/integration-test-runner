@@ -287,10 +287,7 @@ func triggerBuild(conf *config, build *buildOptions) error {
 	}
 
 	// set the rest of the jenkins build parameters
-	buildParameter.Add("PR_TO_TEST", build.pr)
-	buildParameter.Add("REPO_TO_TEST", build.repo)
 	buildParameter.Add("BASE_BRANCH", build.baseBranch)
-	buildParameter.Add("GIT_COMMIT", build.commitSHA)
 	buildParameter.Add("RUN_INTEGRATION_TESTS", "true")
 	buildParameter.Add(repoToJenkinsParameter(build.repo), readHead)
 
