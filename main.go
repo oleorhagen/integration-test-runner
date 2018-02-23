@@ -27,6 +27,7 @@ type config struct {
 	githubSecret               []byte
 	githubToken                string
 	watchRepositories          []string
+	versionedRepositories      []string
 	integrationBranchDependant []string
 	integrationDirectory       string
 }
@@ -46,6 +47,7 @@ const (
 
 func getConfig() (*config, error) {
 	var repositoryWatchList []string
+	var repositoryVersionedList []string
 	username := os.Getenv("JENKINS_USERNAME")
 	password := os.Getenv("JENKINS_PASSWORD")
 	url := os.Getenv("JENKINS_BASE_URL")
@@ -66,6 +68,18 @@ func getConfig() (*config, error) {
 			"mender-artifact",
 			"meta-mender",
 			"mender-api-gateway-docker"}
+	defaultVersionedRepositories :=
+		[]string{
+			"deployments",
+			"deviceadm",
+			"deviceauth",
+			"inventory",
+			"gui",
+			"useradm",
+			"integration",
+			"mender",
+			"mender-artifact",
+			"mender-api-gateway-docker"}
 
 	watchRepositories := os.Getenv("WATCH_REPOS")
 
@@ -73,6 +87,14 @@ func getConfig() (*config, error) {
 		repositoryWatchList = defaultWatchRepositories
 	} else {
 		repositoryWatchList = strings.Split(watchRepositories, ",")
+	}
+
+	versionedRepositories := os.Getenv("VERSIONED_REPOS")
+
+	if len(versionedRepositories) == 0 {
+		repositoryVersionedList = defaultVersionedRepositories
+	} else {
+		repositoryVersionedList = strings.Split(versionedRepositories, ",")
 	}
 
 	switch {
@@ -91,13 +113,14 @@ func getConfig() (*config, error) {
 	}
 
 	return &config{
-		username:             username,
-		password:             password,
-		baseURL:              url,
-		githubSecret:         []byte(githubSecret),
-		githubToken:          githubToken,
-		watchRepositories:    repositoryWatchList,
-		integrationDirectory: integrationDirectory,
+		username:              username,
+		password:              password,
+		baseURL:               url,
+		githubSecret:          []byte(githubSecret),
+		githubToken:           githubToken,
+		watchRepositories:     repositoryWatchList,
+		versionedRepositories: repositoryVersionedList,
+		integrationDirectory:  integrationDirectory,
 	}, nil
 }
 
@@ -254,27 +277,23 @@ func triggerBuild(conf *config, build *buildOptions) error {
 	readHead := "pull/" + build.pr + "/head"
 	buildParameter := url.Values{}
 
-	for _, watchRepo := range conf.watchRepositories {
+	for _, versionedRepo := range conf.versionedRepositories {
 		// iterate over all the repositories (except the one we are testing) and
 		// set the correct microservice versions
 
 		// use the default "master" for both mender-qa, and meta-mender (set in Jenkins)
-		if watchRepo != build.repo &&
-			watchRepo != "meta-mender" &&
-			watchRepo != "integration" &&
+		if versionedRepo != build.repo &&
+			versionedRepo != "integration" &&
 			build.repo != "meta-mender" {
-			if version, err := getServiceRevisionFromIntegration(watchRepo, build.baseBranch); err != nil {
-				log.Errorf("failed to determine %s version: %s", watchRepo, err.Error())
+			if version, err := getServiceRevisionFromIntegration(versionedRepo, build.baseBranch); err != nil {
+				log.Errorf("failed to determine %s version: %s", versionedRepo, err.Error())
 				return err
 			} else {
-				log.Infof("%s version %s is being used in %s: ", watchRepo, version, build.baseBranch)
-				buildParameter.Add(repoToJenkinsParameter(watchRepo), version)
+				log.Infof("%s version %s is being used in %s: ", versionedRepo, version, build.baseBranch)
+				buildParameter.Add(repoToJenkinsParameter(versionedRepo), version)
 			}
 		}
 	}
-
-	// we dont watch for "gui" pr, since we don't test it here, so we must include it manually
-	//buildParameter.Add("GUI_REV", "master")
 
 	// set the correct integraton branches if we aren't performing a pull request again integration
 	if build.repo != "integration" && build.repo != "meta-mender" {
