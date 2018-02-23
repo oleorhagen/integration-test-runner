@@ -173,7 +173,10 @@ func main() {
 
 			for idx, build := range builds {
 				log.Infof("%d: "+spew.Sdump(build)+"\n", idx+1)
-				triggerBuild(conf, &build)
+				err = triggerBuild(conf, &build)
+				if err != nil {
+					log.Errorf("Could not start build: %s", err.Error())
+				}
 			}
 		}
 	})
@@ -333,6 +336,6 @@ func triggerBuild(conf *config, build *buildOptions) error {
 		buildParameter.Add("PUBLISH_ARTIFACTS", "true")
 	}
 
-	log.Infof("build started: %s", spew.Sdump(buildParameter))
+	log.Infof("Starting build: %s", spew.Sdump(buildParameter))
 	return jenkins.Build(job, buildParameter)
 }
