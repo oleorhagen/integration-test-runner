@@ -67,7 +67,8 @@ func getConfig() (*config, error) {
 			"mender",
 			"mender-artifact",
 			"meta-mender",
-			"mender-api-gateway-docker"}
+			"mender-api-gateway-docker",
+			"tenantadm"}
 	defaultVersionedRepositories :=
 		[]string{
 			"deployments",
