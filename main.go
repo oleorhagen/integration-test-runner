@@ -328,10 +328,6 @@ func triggerBuild(conf *config, build *buildOptions) error {
 	buildParameter.Add("TEST_QEMU_RAW_FLASH", qemuParam)
 
 	buildParameter.Add("BUILD_BEAGLEBONEBLACK", qemuParam)
-	buildParameter.Add("TEST_BEAGLEBONEBLACK", qemuParam)
-
-	buildParameter.Add("BUILD_RASPBERRYPI3", qemuParam)
-	buildParameter.Add("TEST_RASPBERRYPI3", qemuParam)
 
 	if build.publishArtifacts {
 		buildParameter.Add("PUBLISH_ARTIFACTS", "true")
