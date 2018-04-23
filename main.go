@@ -321,11 +321,14 @@ func triggerBuild(conf *config, build *buildOptions) error {
 		qemuParam = ""
 	}
 
-	buildParameter.Add("BUILD_QEMU_SDIMG", qemuParam)
-	buildParameter.Add("TEST_QEMU_SDIMG", qemuParam)
+	buildParameter.Add("BUILD_QEMUX86_64_UEFI_GRUB", qemuParam)
+	buildParameter.Add("TEST_QEMUX86_64_UEFI_GRUB", qemuParam)
 
-	buildParameter.Add("BUILD_QEMU_RAW_FLASH", qemuParam)
-	buildParameter.Add("TEST_QEMU_RAW_FLASH", qemuParam)
+	buildParameter.Add("BUILD_VEXPRESS_QEMU", qemuParam)
+	buildParameter.Add("TEST_VEXPRESS_QEMU", qemuParam)
+
+	buildParameter.Add("BUILD_VEXPRESS_QEMU_FLASH", qemuParam)
+	buildParameter.Add("TEST_VEXPRESS_QEMU_FLASH", qemuParam)
 
 	buildParameter.Add("BUILD_BEAGLEBONEBLACK", qemuParam)
 
