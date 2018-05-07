@@ -66,6 +66,8 @@ func getConfig() (*config, error) {
 			"integration",
 			"mender",
 			"mender-artifact",
+			"mender-conductor",
+			"mender-conductor-enterprise",
 			"meta-mender",
 			"mender-api-gateway-docker",
 			"tenantadm"}
@@ -80,6 +82,8 @@ func getConfig() (*config, error) {
 			"integration",
 			"mender",
 			"mender-artifact",
+			"mender-conductor",
+			"mender-conductor-enterprise",
 			"mender-api-gateway-docker"}
 
 	watchRepositories := os.Getenv("WATCH_REPOS")
