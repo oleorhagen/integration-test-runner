@@ -66,6 +66,7 @@ func getConfig() (*config, error) {
 			"integration",
 			"mender",
 			"mender-artifact",
+			"mender-cli",
 			"mender-conductor",
 			"mender-conductor-enterprise",
 			"meta-mender",
@@ -82,6 +83,7 @@ func getConfig() (*config, error) {
 			"integration",
 			"mender",
 			"mender-artifact",
+			"mender-cli",
 			"mender-conductor",
 			"mender-conductor-enterprise",
 			"mender-api-gateway-docker"}
