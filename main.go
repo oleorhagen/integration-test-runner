@@ -339,6 +339,9 @@ func triggerBuild(conf *config, build *buildOptions) error {
 	buildParameter.Add("BUILD_VEXPRESS_QEMU_FLASH", qemuParam)
 	buildParameter.Add("TEST_VEXPRESS_QEMU_FLASH", qemuParam)
 
+	buildParameter.Add("BUILD_VEXPRESS_QEMU_UBOOT_UEFI_GRUB", qemuParam)
+	buildParameter.Add("TEST_VEXPRESS_QEMU_UBOOT_UEFI_GRUB", qemuParam)
+
 	buildParameter.Add("BUILD_BEAGLEBONEBLACK", qemuParam)
 
 	if build.publishArtifacts {
