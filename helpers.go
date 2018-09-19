@@ -81,3 +81,13 @@ func getIntegrationVersionsUsingMicroservice(repo, version string, conf *config)
 	log.Infof("%s/%s is being used in the following integration: %s", repo, version, branches)
 	return branches, nil
 }
+
+func getListOfVersionedRepositories() ([]string, error) {
+	c := exec.Command("release_tool.py", "--list")
+	output, err := c.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	return strings.Split(strings.TrimSpace(string(output)), "\n"), nil
+}

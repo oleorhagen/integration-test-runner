@@ -27,7 +27,6 @@ type config struct {
 	githubSecret               []byte
 	githubToken                string
 	watchRepositories          []string
-	versionedRepositories      []string
 	integrationBranchDependant []string
 	integrationDirectory       string
 }
@@ -47,7 +46,6 @@ const (
 
 func getConfig() (*config, error) {
 	var repositoryWatchList []string
-	var repositoryVersionedList []string
 	username := os.Getenv("JENKINS_USERNAME")
 	password := os.Getenv("JENKINS_PASSWORD")
 	url := os.Getenv("JENKINS_BASE_URL")
@@ -72,21 +70,6 @@ func getConfig() (*config, error) {
 			"meta-mender",
 			"mender-api-gateway-docker",
 			"tenantadm"}
-	defaultVersionedRepositories :=
-		[]string{
-			"deployments",
-			"deviceadm",
-			"deviceauth",
-			"inventory",
-			"gui",
-			"useradm",
-			"integration",
-			"mender",
-			"mender-artifact",
-			"mender-cli",
-			"mender-conductor",
-			"mender-conductor-enterprise",
-			"mender-api-gateway-docker"}
 
 	watchRepositories := os.Getenv("WATCH_REPOS")
 
@@ -94,14 +77,6 @@ func getConfig() (*config, error) {
 		repositoryWatchList = defaultWatchRepositories
 	} else {
 		repositoryWatchList = strings.Split(watchRepositories, ",")
-	}
-
-	versionedRepositories := os.Getenv("VERSIONED_REPOS")
-
-	if len(versionedRepositories) == 0 {
-		repositoryVersionedList = defaultVersionedRepositories
-	} else {
-		repositoryVersionedList = strings.Split(versionedRepositories, ",")
 	}
 
 	switch {
@@ -126,7 +101,6 @@ func getConfig() (*config, error) {
 		githubSecret:          []byte(githubSecret),
 		githubToken:           githubToken,
 		watchRepositories:     repositoryWatchList,
-		versionedRepositories: repositoryVersionedList,
 		integrationDirectory:  integrationDirectory,
 	}, nil
 }
@@ -287,7 +261,13 @@ func triggerBuild(conf *config, build *buildOptions) error {
 	readHead := "pull/" + build.pr + "/head"
 	buildParameter := url.Values{}
 
-	for _, versionedRepo := range conf.versionedRepositories {
+	versionedRepositories, err := getListOfVersionedRepositories()
+	if err != nil {
+		log.Errorf("Could not get list of repositories: %s", err.Error())
+		return err
+	}
+
+	for _, versionedRepo := range versionedRepositories {
 		// iterate over all the repositories (except the one we are testing) and
 		// set the correct microservice versions
 
