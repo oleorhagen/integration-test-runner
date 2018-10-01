@@ -261,7 +261,7 @@ func triggerBuild(conf *config, build *buildOptions) error {
 	readHead := "pull/" + build.pr + "/head"
 	buildParameter := url.Values{}
 
-	versionedRepositories, err := getListOfVersionedRepositories()
+	versionedRepositories, err := getListOfVersionedRepositories("origin/" + build.baseBranch)
 	if err != nil {
 		log.Errorf("Could not get list of repositories: %s", err.Error())
 		return err

@@ -82,8 +82,8 @@ func getIntegrationVersionsUsingMicroservice(repo, version string, conf *config)
 	return branches, nil
 }
 
-func getListOfVersionedRepositories() ([]string, error) {
-	c := exec.Command("release_tool.py", "--list")
+func getListOfVersionedRepositories(inVersion string) ([]string, error) {
+	c := exec.Command("release_tool.py", "--list", "--in-integration-version", inVersion)
 	output, err := c.Output()
 	if err != nil {
 		return nil, err
