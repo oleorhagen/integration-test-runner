@@ -261,7 +261,13 @@ func triggerBuild(conf *config, build *buildOptions) error {
 	readHead := "pull/" + build.pr + "/head"
 	buildParameter := url.Values{}
 
-	versionedRepositories, err := getListOfVersionedRepositories("origin/" + build.baseBranch)
+	var versionedRepositories []string
+	if build.repo == "meta-mender" {
+		// For meta-mender, pick master versions of all Mender release repos.
+		versionedRepositories, err = getListOfVersionedRepositories("origin/master")
+	} else {
+		versionedRepositories, err = getListOfVersionedRepositories("origin/" + build.baseBranch)
+	}
 	if err != nil {
 		log.Errorf("Could not get list of repositories: %s", err.Error())
 		return err
