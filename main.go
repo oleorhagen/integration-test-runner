@@ -319,6 +319,9 @@ func triggerBuild(conf *config, build *buildOptions) error {
 	buildParameter.Add("BUILD_QEMUX86_64_BIOS_GRUB", qemuParam)
 	buildParameter.Add("TEST_QEMUX86_64_BIOS_GRUB", qemuParam)
 
+	buildParameter.Add("BUILD_QEMUX86_64_BIOS_GRUB_GPT", qemuParam)
+	buildParameter.Add("TEST_QEMUX86_64_BIOS_GRUB_GPT", qemuParam)
+
 	buildParameter.Add("BUILD_VEXPRESS_QEMU", qemuParam)
 	buildParameter.Add("TEST_VEXPRESS_QEMU", qemuParam)
 
