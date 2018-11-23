@@ -296,8 +296,9 @@ func triggerBuild(conf *config, build *buildOptions) error {
 		buildParameter.Add(repoToJenkinsParameter("integration"), build.baseBranch)
 	}
 
-	// set the poky branch equal to the meta-mender base branch
-	if build.repo == "meta-mender" {
+	// set the poky branch equal to the meta-mender base branch, unless it
+	// is master, in which case we rely on the default.
+	if build.repo == "meta-mender" && build.baseBranch != "master" {
 		buildParameter.Add(repoToJenkinsParameter("poky"), build.baseBranch)
 	}
 
