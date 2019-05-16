@@ -13,9 +13,9 @@ import (
 	"github.com/google/go-github/github"
 	"github.com/yosida95/golang-jenkins"
 	"golang.org/x/oauth2"
-	"gopkg.in/gin-gonic/gin.v1"
+	"github.com/gin-gonic/gin"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 var mutex = &sync.Mutex{}
