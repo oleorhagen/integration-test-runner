@@ -111,10 +111,10 @@
 			"revisionTime": "2019-05-07T20:14:01Z"
 		},
 		{
-			"checksumSHA1": "PqkbifS1zbisVBcSx6k7jzwSYzA=",
-			"path": "github.com/yosida95/golang-jenkins",
-			"revision": "4772716c47ca769dea7f92bc28dc607eeb16d8a8",
-			"revisionTime": "2019-04-04T12:58:45Z"
+			"checksumSHA1": "uLzGNnzOaZy9ivrVMjM5f4AjMWk=",
+			"path": "github.com/xanzy/go-gitlab",
+			"revision": "3bd864d050a913ce86fb77fa8c48860e7818050d",
+			"revisionTime": "2019-05-12T16:23:10Z"
 		},
 		{
 			"checksumSHA1": "GtamqiJoL7PGHsN454AoffBFMa8=",
