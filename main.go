@@ -37,7 +37,6 @@ type buildOptions struct {
 	baseBranch       string
 	commitSHA        string
 	makeQEMU         bool
-	publishArtifacts bool
 }
 
 const (
@@ -188,7 +187,6 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 		baseBranch := strings.Split(pr.PullRequest.Base.GetLabel(), ":")[1]
 
 		makeQEMU := false
-		buildContainers := false
 
 		for _, watchRepo := range conf.watchRepositories {
 			// make sure the repo that the pull request is performed against is
@@ -197,15 +195,6 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 			if watchRepo == repo {
 				if repo == "mender" || repo == "meta-mender" || repo == "mender-artifact" {
 					makeQEMU = true
-				}
-
-				if action == "merge" || action == "closed" {
-					if repo == "mender" || repo == "meta-mender" {
-						buildContainers = true
-					} else {
-						// if this is a merge, and it's not for mender or meta-mender, we aren't interested.
-						return nil
-					}
 				}
 
 				// we need to have the latest integration/master branch in order to use the release_tool.py
@@ -221,7 +210,6 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 						baseBranch:       baseBranch,
 						commitSHA:        commitSHA,
 						makeQEMU:         makeQEMU,
-						publishArtifacts: buildContainers,
 					}
 					builds = append(builds, build)
 
@@ -242,7 +230,6 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 							baseBranch:       integrationBranch,
 							commitSHA:        commitSHA,
 							makeQEMU:         makeQEMU,
-							publishArtifacts: buildContainers,
 						}
 						builds = append(builds, buildOpts)
 					}
@@ -337,10 +324,6 @@ func triggerBuild(conf *config, build *buildOptions) error {
 	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_VEXPRESS_QEMU_UBOOT_UEFI_GRUB", qemuParam})
 
 	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_BEAGLEBONEBLACK", qemuParam})
-
-	if build.publishArtifacts {
-		buildParameters = append(buildParameters, &gitlab.PipelineVariable{"PUBLISH_ARTIFACTS", "true"})
-	}
 
 	ref := "master"
 	opt := &gitlab.CreatePipelineOptions{
