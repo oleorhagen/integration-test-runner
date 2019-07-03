@@ -170,8 +170,8 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 	log.Info("Pull request event with action: ", action)
 	var builds []buildOptions
 
-	// Do not run the integration tests if '*NO-INTEGRATION*' is found on a separate line in the commit body
-	if pr.Body != nil && strings.Contains(pr.Body, "NO-RUN-TESTS") {
+	// Do not run the integration tests if 'NO-RUN-TESTS' is found on a separate line in the commit body
+	if pr.GetPullRequest().Body != nil && strings.Contains(*pr.GetPullRequest().Body, "NO-RUN-TESTS") {
 		return nil
 	}
 
