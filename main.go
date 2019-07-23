@@ -3,16 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
-	"io/ioutil"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/google/go-github/github"
-	"github.com/xanzy/go-gitlab"
+	"github.com/yosida95/golang-jenkins"
 	"golang.org/x/oauth2"
 	"github.com/gin-gonic/gin"
 
@@ -22,10 +21,11 @@ import (
 var mutex = &sync.Mutex{}
 
 type config struct {
+	username                   string
+	password                   string
+	baseURL                    string
 	githubSecret               []byte
 	githubToken                string
-	gitlabToken                string
-	gitlabBaseURL              string
 	watchRepositories          []string
 	integrationBranchDependant []string
 	integrationDirectory       string
@@ -46,10 +46,11 @@ const (
 
 func getConfig() (*config, error) {
 	var repositoryWatchList []string
+	username := os.Getenv("JENKINS_USERNAME")
+	password := os.Getenv("JENKINS_PASSWORD")
+	url := os.Getenv("JENKINS_BASE_URL")
 	githubSecret := os.Getenv("GITHUB_SECRET")
 	githubToken := os.Getenv("GITHUB_TOKEN")
-	gitlabToken := os.Getenv("GITLAB_TOKEN")
-	gitlabBaseURL := os.Getenv("GITLAB_BASE_URL")
 	integrationDirectory := os.Getenv("INTEGRATION_DIRECTORY")
 
 	// if no env. variable is set, this is the default repo watch list
@@ -81,23 +82,26 @@ func getConfig() (*config, error) {
 	}
 
 	switch {
+	case username == "":
+		return &config{}, fmt.Errorf("set JENKINS_USERNAME")
+	case password == "":
+		return &config{}, fmt.Errorf("set JENKINS_PASSWORD")
+	case url == "":
+		return &config{}, fmt.Errorf("set JENKINS_BASE_URL")
 	case githubSecret == "":
 		return &config{}, fmt.Errorf("set GITHUB_SECRET")
 	case githubToken == "":
 		return &config{}, fmt.Errorf("set GITHUB_TOKEN")
-	case gitlabToken == "":
-		return &config{}, fmt.Errorf("set GITLAB_TOKEN")
-	case gitlabBaseURL == "":
-		return &config{}, fmt.Errorf("set GITLAB_BASE_URL")
 	case integrationDirectory == "":
 		return &config{}, fmt.Errorf("set INTEGRATION_DIRECTORY")
 	}
 
 	return &config{
+		username:              username,
+		password:              password,
+		baseURL:               url,
 		githubSecret:          []byte(githubSecret),
 		githubToken:           githubToken,
-		gitlabToken:           gitlabToken,
-		gitlabBaseURL:         gitlabBaseURL,
 		watchRepositories:     repositoryWatchList,
 		integrationDirectory:  integrationDirectory,
 	}, nil
@@ -136,20 +140,13 @@ func main() {
 		event, _ := github.ParseWebHook(github.WebHookType(context.Request), payload)
 		if github.WebHookType(context.Request) == "pull_request" {
 			pr := event.(*github.PullRequestEvent)
-			action := pr.GetAction()
 
-			// To run component's Pipeline create a branch in GitLab, regardless of the PR
-			// coming from a mendersoftware member or not (equivalent to the old Travis tests)
-			err := createPullRequestBranch(*pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action)
-			if err != nil {
-				log.Errorf("Could not create PR branch: %s", err.Error())
-			}
-
-			// Then, continue to the integration Pipeline only for mendersoftware members
 			if member, _, _ := githubClient.Organizations.IsMember(context, "mendersoftware", pr.Sender.GetLogin()); !member {
-				log.Warnf("%s is making a pullrequest, but he/she is not a member of mendersoftware, ignoring", pr.Sender.GetLogin())
+				log.Warnf("%s is making a pullrequest, but he's not a member of mendersoftware, ignoring", pr.Sender.GetLogin())
 				return
 			}
+
+			action := pr.GetAction()
 
 			// make sure we only parse one pr at a time, since we use git
 			mutex.Lock()
@@ -256,14 +253,20 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 }
 
 func triggerBuild(conf *config, build *buildOptions) error {
-	gitlabClient := gitlab.NewClient(nil, conf.gitlabToken)
-	err := gitlabClient.SetBaseURL(conf.gitlabBaseURL)
+	auth := &gojenkins.Auth{
+		Username: conf.username,
+		ApiToken: conf.password,
+	}
+
+	jenkins := gojenkins.NewJenkins(auth, conf.baseURL)
+	job, err := jenkins.GetJob("mender-builder")
+
 	if err != nil {
-		return err
+		return nil
 	}
 
 	readHead := "pull/" + build.pr + "/head"
-	var buildParameters []*gitlab.PipelineVariable
+	buildParameter := url.Values{}
 
 	var versionedRepositories []string
 	if build.repo == "meta-mender" {
@@ -290,26 +293,26 @@ func triggerBuild(conf *config, build *buildOptions) error {
 				return err
 			} else {
 				log.Infof("%s version %s is being used in %s: ", versionedRepo, version, build.baseBranch)
-				buildParameters = append(buildParameters, &gitlab.PipelineVariable{repoToBuildParameter(versionedRepo), version})
+				buildParameter.Add(repoToJenkinsParameter(versionedRepo), version)
 			}
 		}
 	}
 
 	// set the correct integraton branches if we aren't performing a pull request again integration
 	if build.repo != "integration" && build.repo != "meta-mender" {
-		buildParameters = append(buildParameters, &gitlab.PipelineVariable{repoToBuildParameter("integration"), build.baseBranch})
+		buildParameter.Add(repoToJenkinsParameter("integration"), build.baseBranch)
 	}
 
 	// set the poky branch equal to the meta-mender base branch, unless it
 	// is master, in which case we rely on the default.
 	if build.repo == "meta-mender" && build.baseBranch != "master" {
-		buildParameters = append(buildParameters, &gitlab.PipelineVariable{repoToBuildParameter("poky"), build.baseBranch})
+		buildParameter.Add(repoToJenkinsParameter("poky"), build.baseBranch)
 	}
 
 	// set the rest of the jenkins build parameters
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BASE_BRANCH", build.baseBranch})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"RUN_INTEGRATION_TESTS", "true"})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{repoToBuildParameter(build.repo), readHead})
+	buildParameter.Add("BASE_BRANCH", build.baseBranch)
+	buildParameter.Add("RUN_INTEGRATION_TESTS", "true")
+	buildParameter.Add(repoToJenkinsParameter(build.repo), readHead)
 
 	var qemuParam string
 	if build.makeQEMU {
@@ -318,96 +321,30 @@ func triggerBuild(conf *config, build *buildOptions) error {
 		qemuParam = ""
 	}
 
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_QEMUX86_64_UEFI_GRUB", qemuParam})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_QEMUX86_64_UEFI_GRUB", qemuParam})
+	buildParameter.Add("BUILD_QEMUX86_64_UEFI_GRUB", qemuParam)
+	buildParameter.Add("TEST_QEMUX86_64_UEFI_GRUB", qemuParam)
 
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_QEMUX86_64_BIOS_GRUB", qemuParam})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_QEMUX86_64_BIOS_GRUB", qemuParam})
+	buildParameter.Add("BUILD_QEMUX86_64_BIOS_GRUB", qemuParam)
+	buildParameter.Add("TEST_QEMUX86_64_BIOS_GRUB", qemuParam)
 
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_QEMUX86_64_BIOS_GRUB_GPT", qemuParam})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_QEMUX86_64_BIOS_GRUB_GPT", qemuParam})
+	buildParameter.Add("BUILD_QEMUX86_64_BIOS_GRUB_GPT", qemuParam)
+	buildParameter.Add("TEST_QEMUX86_64_BIOS_GRUB_GPT", qemuParam)
 
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_VEXPRESS_QEMU", qemuParam})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_VEXPRESS_QEMU", qemuParam})
+	buildParameter.Add("BUILD_VEXPRESS_QEMU", qemuParam)
+	buildParameter.Add("TEST_VEXPRESS_QEMU", qemuParam)
 
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_VEXPRESS_QEMU_FLASH", qemuParam})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_VEXPRESS_QEMU_FLASH", qemuParam})
+	buildParameter.Add("BUILD_VEXPRESS_QEMU_FLASH", qemuParam)
+	buildParameter.Add("TEST_VEXPRESS_QEMU_FLASH", qemuParam)
 
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_VEXPRESS_QEMU_UBOOT_UEFI_GRUB", qemuParam})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_VEXPRESS_QEMU_UBOOT_UEFI_GRUB", qemuParam})
+	buildParameter.Add("BUILD_VEXPRESS_QEMU_UBOOT_UEFI_GRUB", qemuParam)
+	buildParameter.Add("TEST_VEXPRESS_QEMU_UBOOT_UEFI_GRUB", qemuParam)
 
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_BEAGLEBONEBLACK", qemuParam})
+	buildParameter.Add("BUILD_BEAGLEBONEBLACK", qemuParam)
 
 	if build.publishArtifacts {
-		buildParameters = append(buildParameters, &gitlab.PipelineVariable{"PUBLISH_ARTIFACTS", "true"})
+		buildParameter.Add("PUBLISH_ARTIFACTS", "true")
 	}
 
-	ref := "master"
-	opt := &gitlab.CreatePipelineOptions{
-		Ref: &ref,
-		Variables: buildParameters,
-	}
-	integrationPipelinePath := "Northern.tech/Mender/mender-qa"
-	log.Info("Creating pipeline in project " + integrationPipelinePath + " with opts: " + spew.Sdump(opt) + "\n")
-	pipeline, _, err := gitlabClient.Pipelines.CreatePipeline(integrationPipelinePath, opt, nil)
-	if err != nil {
-		log.Errorf("Cound not create pipeline", err.Error())
-	}
-	log.Infof("Created pipeline: %v", pipeline)
-
-	return err
-}
-
-func createPullRequestBranch(repo, pr, action string) error {
-
-	if action != "opened" && action != "edited" && action != "reopened" && action != "synchronize" {
-		log.Infof("Action %s, ignoring", action)
-		return nil
-	}
-
-	tmpdir, err := ioutil.TempDir("", repo)
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmpdir)
-
-	gitcmd := exec.Command("git", "init", ".")
-	gitcmd.Dir = tmpdir
-	out, err := gitcmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	gitcmd = exec.Command("git", "remote", "add", "github", "git@github.com:mendersoftware/" + repo)
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	gitcmd = exec.Command("git", "remote", "add", "gitlab", "git@gitlab.com:Northern.tech/Mender/" + repo)
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	prBranchName := "pr_" + pr
-	gitcmd = exec.Command("git", "fetch", "github", "pull/" + pr + "/head:" + prBranchName )
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	gitcmd = exec.Command("git", "push", "-f", "--set-upstream", "gitlab", prBranchName )
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	log.Infof("Created branch: %s:%s", repo, prBranchName)
-	log.Info("Pipeline is expected to start automatically")
-	return nil
+	log.Infof("Starting build: %s", spew.Sdump(buildParameter))
+	return jenkins.Build(job, buildParameter)
 }

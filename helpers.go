@@ -53,8 +53,8 @@ func updateIntegrationRepo(conf *config) error {
 	return nil
 }
 
-// The parameter that the build system uses for repo specific revisions is <REPO_NAME>_REV
-func repoToBuildParameter(repo string) string {
+// The parameter that jenkins uses for repo specific revisions is <REPO_NAME>_REV
+func repoToJenkinsParameter(repo string) string {
 	repoRevision := strings.ToUpper(repo) + "_REV"
 	return strings.Replace(repoRevision, "-", "_", -1)
 }
