@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"io/ioutil"
+	"reflect"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/google/go-github/github"
@@ -326,6 +327,10 @@ func triggerBuild(conf *config, build *buildOptions) error {
 
 	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_BEAGLEBONEBLACK", qemuParam})
 
+	// first stop old pipelines with ame buildParameters
+	stopStalePipelines(gitlabClient, buildParameters)
+
+	// trigger the new pipeline
 	ref := "master"
 	opt := &gitlab.CreatePipelineOptions{
 		Ref: &ref,
@@ -394,4 +399,51 @@ func createPullRequestBranch(repo, pr, action string) error {
 	log.Infof("Created branch: %s:%s", repo, prBranchName)
 	log.Info("Pipeline is expected to start automatically")
 	return nil
+}
+
+func stopStalePipelines (client *gitlab.Client, vars gitlab.PipelineVariableList) {
+	integrationPipelinePath := "Northern.tech/Mender/mender-qa"
+
+	username := "mender-test-bot"
+	status := gitlab.Pending
+	opt := &gitlab.ListProjectPipelinesOptions{
+		Username: &username,
+		Status: &status,
+	}
+
+	pipelinesPending, _, err := client.Pipelines.ListProjectPipelines(integrationPipelinePath, opt, nil)
+	if err != nil {
+		log.Errorf("stopStalePipelines: Could not list pending pipelines: %s", err.Error())
+	}
+
+	status = gitlab.Running
+	opt = &gitlab.ListProjectPipelinesOptions{
+		Username: &username,
+		Status: &status,
+	}
+
+	pipelinesRunning, _, err := client.Pipelines.ListProjectPipelines(integrationPipelinePath, opt, nil)
+	if err != nil {
+		log.Errorf("stopStalePipelines: Could not list running pipelines: %s", err.Error())
+	}
+
+	for _, pipeline := range append(pipelinesPending, pipelinesRunning...) {
+
+		variables, _, err := client.Pipelines.GetPipelineVariables(integrationPipelinePath, pipeline.ID, nil)
+		if err != nil {
+			log.Errorf("stopStalePipelines: Could not get variables for pipeline: %s", err.Error())
+			continue
+		}
+
+		if reflect.DeepEqual(vars, variables) {
+			log.Infof("Cancelling stale pipeline %d, url: %s", pipeline.ID, pipeline.WebURL)
+
+			_, _, err := client.Pipelines.CancelPipelineBuild(integrationPipelinePath, pipeline.ID, nil)
+			if err != nil {
+				log.Errorf("stopStalePipelines: Could not cancel pipeline: %s", err.Error())
+			}
+
+		}
+
+	}
 }
