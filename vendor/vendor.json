@@ -111,10 +111,14 @@
 			"revisionTime": "2019-05-07T20:14:01Z"
 		},
 		{
-			"checksumSHA1": "sCU5JMzO7glQiMoKET4NkHdO1sQ=",
+			"checksumSHA1": "PKe8xDRJnxGdhRzXu+qdvy5+7fg=",
+			"origin": "github.com/lluiscampos/go-gitlab",
 			"path": "github.com/xanzy/go-gitlab",
-			"revision": "b1d195859ad07645a0c3eb3609a1545b5d9e40be",
-			"revisionTime": "2019-08-19T19:57:50Z"
+			"revision": "20eca2b9d9ec3722fa01a40e90e6562695c9e89e",
+			"revisionTime": "2019-08-31T06:48:26Z",
+			"tree": true,
+			"version": "add-get-pipeline-variables-endpoint",
+			"versionExact": "add-get-pipeline-variables-endpoint"
 		},
 		{
 			"checksumSHA1": "GtamqiJoL7PGHsN454AoffBFMa8=",
