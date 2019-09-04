@@ -56,14 +56,30 @@ type Pipeline struct {
 		AvatarURL string `json:"avatar_url"`
 		WebURL    string `json:"web_url"`
 	}
-	UpdatedAt   *time.Time `json:"updated_at"`
-	CreatedAt   *time.Time `json:"created_at"`
-	StartedAt   *time.Time `json:"started_at"`
-	FinishedAt  *time.Time `json:"finished_at"`
-	CommittedAt *time.Time `json:"committed_at"`
-	Duration    int        `json:"duration"`
-	Coverage    string     `json:"coverage"`
-	WebURL      string     `json:"web_url"`
+	UpdatedAt      *time.Time      `json:"updated_at"`
+	CreatedAt      *time.Time      `json:"created_at"`
+	StartedAt      *time.Time      `json:"started_at"`
+	FinishedAt     *time.Time      `json:"finished_at"`
+	CommittedAt    *time.Time      `json:"committed_at"`
+	Duration       int             `json:"duration"`
+	Coverage       string          `json:"coverage"`
+	WebURL         string          `json:"web_url"`
+	DetailedStatus *DetailedStatus `json:"detailed_status"`
+}
+
+// DetailedStatus contains detailed information about the status of a pipeline
+type DetailedStatus struct {
+	Icon         string `json:"icon"`
+	Text         string `json:"text"`
+	Label        string `json:"label"`
+	Group        string `json:"group"`
+	Tooltip      string `json:"tooltip"`
+	HasDetails   bool   `json:"has_details"`
+	DetailsPath  string `json:"details_path"`
+	Illustration struct {
+		Image string `json:"image"`
+	} `json:"illustration"`
+	Favicon string `json:"favicon"`
 }
 
 func (i Pipeline) String() string {
@@ -152,6 +168,39 @@ func (s *PipelinesService) GetPipeline(pid interface{}, pipeline int, options ..
 	return p, resp, err
 }
 
+// PipelineVariableList represents a GitLab list of project pipeline variables
+//
+// GitLab API docs: https://docs.gitlab.com/ce/api/pipelines.html#get-variables-of-a-pipeline
+type PipelineVariableList []*PipelineVariable
+
+func (i PipelineVariableList) String() string {
+	return Stringify(i)
+}
+
+// GetPipelineVariables gets the variables of a single project pipeline.
+//
+// GitLab API docs: https://docs.gitlab.com/ce/api/pipelines.html#get-variables-of-a-pipeline
+func (s *PipelinesService) GetPipelineVariables(pid interface{}, pipeline int, options ...OptionFunc) (PipelineVariableList, *Response, error) {
+	project, err := parseID(pid)
+	if err != nil {
+		return nil, nil, err
+	}
+	u := fmt.Sprintf("projects/%s/pipelines/%d/variables", pathEscape(project), pipeline)
+
+	req, err := s.client.NewRequest("GET", u, nil, options)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var p PipelineVariableList
+	resp, err := s.client.Do(req, &p)
+	if err != nil {
+		return nil, resp, err
+	}
+
+	return p, resp, err
+}
+
 // CreatePipelineOptions represents the available CreatePipeline() options.
 //
 // GitLab API docs: https://docs.gitlab.com/ce/api/pipelines.html#create-a-new-pipeline
@@ -193,7 +242,7 @@ func (s *PipelinesService) RetryPipelineBuild(pid interface{}, pipeline int, opt
 	if err != nil {
 		return nil, nil, err
 	}
-	u := fmt.Sprintf("projects/%s/pipelines/%d/retry", project, pipeline)
+	u := fmt.Sprintf("projects/%s/pipelines/%d/retry", pathEscape(project), pipeline)
 
 	req, err := s.client.NewRequest("POST", u, nil, options)
 	if err != nil {
@@ -218,7 +267,7 @@ func (s *PipelinesService) CancelPipelineBuild(pid interface{}, pipeline int, op
 	if err != nil {
 		return nil, nil, err
 	}
-	u := fmt.Sprintf("projects/%s/pipelines/%d/cancel", project, pipeline)
+	u := fmt.Sprintf("projects/%s/pipelines/%d/cancel", pathEscape(project), pipeline)
 
 	req, err := s.client.NewRequest("POST", u, nil, options)
 	if err != nil {
@@ -243,7 +292,7 @@ func (s *PipelinesService) DeletePipeline(pid interface{}, pipeline int, options
 	if err != nil {
 		return nil, err
 	}
-	u := fmt.Sprintf("projects/%s/pipelines/%d", project, pipeline)
+	u := fmt.Sprintf("projects/%s/pipelines/%d", pathEscape(project), pipeline)
 
 	req, err := s.client.NewRequest("DELETE", u, nil, options)
 	if err != nil {
