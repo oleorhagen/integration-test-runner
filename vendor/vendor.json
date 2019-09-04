@@ -111,10 +111,14 @@
 			"revisionTime": "2019-05-07T20:14:01Z"
 		},
 		{
-			"checksumSHA1": "PqkbifS1zbisVBcSx6k7jzwSYzA=",
-			"path": "github.com/yosida95/golang-jenkins",
-			"revision": "4772716c47ca769dea7f92bc28dc607eeb16d8a8",
-			"revisionTime": "2019-04-04T12:58:45Z"
+			"checksumSHA1": "PKe8xDRJnxGdhRzXu+qdvy5+7fg=",
+			"origin": "github.com/lluiscampos/go-gitlab",
+			"path": "github.com/xanzy/go-gitlab",
+			"revision": "20eca2b9d9ec3722fa01a40e90e6562695c9e89e",
+			"revisionTime": "2019-08-31T06:48:26Z",
+			"tree": true,
+			"version": "add-get-pipeline-variables-endpoint",
+			"versionExact": "add-get-pipeline-variables-endpoint"
 		},
 		{
 			"checksumSHA1": "GtamqiJoL7PGHsN454AoffBFMa8=",
