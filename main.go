@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"io/ioutil"
+	"sort"
 	"reflect"
 
 	"github.com/davecgh/go-spew/spew"
@@ -331,18 +332,24 @@ func triggerBuild(conf *config, build *buildOptions) error {
 	stopStalePipelines(gitlabClient, buildParameters)
 
 	// trigger the new pipeline
+	integrationPipelinePath := "Northern.tech/Mender/mender-qa"
 	ref := "master"
 	opt := &gitlab.CreatePipelineOptions{
 		Ref: &ref,
 		Variables: buildParameters,
 	}
-	integrationPipelinePath := "Northern.tech/Mender/mender-qa"
-	log.Info("Creating pipeline in project " + integrationPipelinePath + " with opts: " + spew.Sdump(opt) + "\n")
+
+	variablesString := ""
+	for _, variable := range opt.Variables {
+		variablesString += variable.Key + ":" + variable.Value + ", "
+	}
+	log.Infof("Creating pipeline in project %s:%s with variables: %s", integrationPipelinePath, *opt.Ref, variablesString)
+
 	pipeline, _, err := gitlabClient.Pipelines.CreatePipeline(integrationPipelinePath, opt, nil)
 	if err != nil {
 		log.Errorf("Cound not create pipeline", err.Error())
 	}
-	log.Infof("Created pipeline: %v", pipeline)
+	log.Infof("Created pipeline: %s", pipeline.WebURL)
 
 	return err
 }
@@ -404,6 +411,10 @@ func createPullRequestBranch(repo, pr, action string) error {
 func stopStalePipelines (client *gitlab.Client, vars gitlab.PipelineVariableList) {
 	integrationPipelinePath := "Northern.tech/Mender/mender-qa"
 
+	sort.SliceStable(vars, func(i, j int) bool {
+		return vars[i].Key < vars[j].Key
+	})
+
 	username := "mender-test-bot"
 	status := gitlab.Pending
 	opt := &gitlab.ListProjectPipelinesOptions{
@@ -434,6 +445,10 @@ func stopStalePipelines (client *gitlab.Client, vars gitlab.PipelineVariableList
 			log.Errorf("stopStalePipelines: Could not get variables for pipeline: %s", err.Error())
 			continue
 		}
+
+		sort.SliceStable(variables, func(i, j int) bool {
+			return variables[i].Key < variables[j].Key
+		})
 
 		if reflect.DeepEqual(vars, variables) {
 			log.Infof("Cancelling stale pipeline %d, url: %s", pipeline.ID, pipeline.WebURL)
