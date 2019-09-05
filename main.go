@@ -332,18 +332,24 @@ func triggerBuild(conf *config, build *buildOptions) error {
 	stopStalePipelines(gitlabClient, buildParameters)
 
 	// trigger the new pipeline
+	integrationPipelinePath := "Northern.tech/Mender/mender-qa"
 	ref := "master"
 	opt := &gitlab.CreatePipelineOptions{
 		Ref: &ref,
 		Variables: buildParameters,
 	}
-	integrationPipelinePath := "Northern.tech/Mender/mender-qa"
-	log.Info("Creating pipeline in project " + integrationPipelinePath + " with opts: " + spew.Sdump(opt) + "\n")
+
+	variablesString := ""
+	for _, variable := range opt.Variables {
+		variablesString += variable.Key + ":" + variable.Value + ", "
+	}
+	log.Infof("Creating pipeline in project %s:%s with variables: %s", integrationPipelinePath, *opt.Ref, variablesString)
+
 	pipeline, _, err := gitlabClient.Pipelines.CreatePipeline(integrationPipelinePath, opt, nil)
 	if err != nil {
 		log.Errorf("Cound not create pipeline", err.Error())
 	}
-	log.Infof("Created pipeline: %v", pipeline)
+	log.Infof("Created pipeline: %s", pipeline.WebURL)
 
 	return err
 }
