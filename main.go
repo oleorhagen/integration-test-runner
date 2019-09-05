@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"io/ioutil"
+	"sort"
 	"reflect"
 
 	"github.com/davecgh/go-spew/spew"
@@ -404,6 +405,10 @@ func createPullRequestBranch(repo, pr, action string) error {
 func stopStalePipelines (client *gitlab.Client, vars gitlab.PipelineVariableList) {
 	integrationPipelinePath := "Northern.tech/Mender/mender-qa"
 
+	sort.SliceStable(vars, func(i, j int) bool {
+		return vars[i].Key < vars[j].Key
+	})
+
 	username := "mender-test-bot"
 	status := gitlab.Pending
 	opt := &gitlab.ListProjectPipelinesOptions{
@@ -434,6 +439,10 @@ func stopStalePipelines (client *gitlab.Client, vars gitlab.PipelineVariableList
 			log.Errorf("stopStalePipelines: Could not get variables for pipeline: %s", err.Error())
 			continue
 		}
+
+		sort.SliceStable(variables, func(i, j int) bool {
+			return variables[i].Key < variables[j].Key
+		})
 
 		if reflect.DeepEqual(vars, variables) {
 			log.Infof("Cancelling stale pipeline %d, url: %s", pipeline.ID, pipeline.WebURL)
