@@ -168,19 +168,10 @@ func (s *PipelinesService) GetPipeline(pid interface{}, pipeline int, options ..
 	return p, resp, err
 }
 
-// PipelineVariableList represents a GitLab list of project pipeline variables
-//
-// GitLab API docs: https://docs.gitlab.com/ce/api/pipelines.html#get-variables-of-a-pipeline
-type PipelineVariableList []*PipelineVariable
-
-func (i PipelineVariableList) String() string {
-	return Stringify(i)
-}
-
 // GetPipelineVariables gets the variables of a single project pipeline.
 //
 // GitLab API docs: https://docs.gitlab.com/ce/api/pipelines.html#get-variables-of-a-pipeline
-func (s *PipelinesService) GetPipelineVariables(pid interface{}, pipeline int, options ...OptionFunc) (PipelineVariableList, *Response, error) {
+func (s *PipelinesService) GetPipelineVariables(pid interface{}, pipeline int, options ...OptionFunc) ([]*PipelineVariable, *Response, error) {
 	project, err := parseID(pid)
 	if err != nil {
 		return nil, nil, err
@@ -192,7 +183,7 @@ func (s *PipelinesService) GetPipelineVariables(pid interface{}, pipeline int, o
 		return nil, nil, err
 	}
 
-	var p PipelineVariableList
+	var p []*PipelineVariable
 	resp, err := s.client.Do(req, &p)
 	if err != nil {
 		return nil, resp, err
