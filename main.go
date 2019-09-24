@@ -206,7 +206,7 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 				}
 
 				switch repo {
-				case "meta-mender", "integration", "tenantadm":
+				case "meta-mender", "integration":
 					build := buildOptions{
 						pr:               strconv.Itoa(pr.GetNumber()),
 						repo:             repo,
