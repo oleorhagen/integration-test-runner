@@ -408,7 +408,7 @@ func createPullRequestBranch(repo, pr, action string) error {
 	return nil
 }
 
-func stopStalePipelines (client *gitlab.Client, vars gitlab.PipelineVariableList) {
+func stopStalePipelines (client *gitlab.Client, vars []*gitlab.PipelineVariable) {
 	integrationPipelinePath := "Northern.tech/Mender/mender-qa"
 
 	sort.SliceStable(vars, func(i, j int) bool {
