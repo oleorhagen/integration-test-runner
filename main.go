@@ -2,23 +2,26 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"os"
 	"os/exec"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"io/ioutil"
-	"sort"
-	"reflect"
 
 	"github.com/davecgh/go-spew/spew"
+	"github.com/gin-gonic/gin"
 	"github.com/google/go-github/github"
 	"github.com/xanzy/go-gitlab"
 	"golang.org/x/oauth2"
-	"github.com/gin-gonic/gin"
 
 	log "github.com/sirupsen/logrus"
+	"regexp"
 )
 
 var mutex = &sync.Mutex{}
@@ -31,6 +34,7 @@ type config struct {
 	watchRepositories          []string
 	integrationBranchDependant []string
 	integrationDirectory       string
+	gallieniiPort              string
 }
 
 type buildOptions struct {
@@ -52,6 +56,7 @@ func getConfig() (*config, error) {
 	gitlabToken := os.Getenv("GITLAB_TOKEN")
 	gitlabBaseURL := os.Getenv("GITLAB_BASE_URL")
 	integrationDirectory := os.Getenv("INTEGRATION_DIRECTORY")
+	gallieniiPort := os.Getenv("GALLIENII_PORT")
 
 	// if no env. variable is set, this is the default repo watch list
 	defaultWatchRepositories :=
@@ -93,15 +98,18 @@ func getConfig() (*config, error) {
 		return &config{}, fmt.Errorf("set GITLAB_BASE_URL")
 	case integrationDirectory == "":
 		return &config{}, fmt.Errorf("set INTEGRATION_DIRECTORY")
+	case gallieniiPort == "":
+		return &config{}, fmt.Errorf("Set GALLIENII_PORT")
 	}
 
 	return &config{
-		githubSecret:          []byte(githubSecret),
-		githubToken:           githubToken,
-		gitlabToken:           gitlabToken,
-		gitlabBaseURL:         gitlabBaseURL,
-		watchRepositories:     repositoryWatchList,
-		integrationDirectory:  integrationDirectory,
+		githubSecret:         []byte(githubSecret),
+		githubToken:          githubToken,
+		gitlabToken:          gitlabToken,
+		gitlabBaseURL:        gitlabBaseURL,
+		watchRepositories:    repositoryWatchList,
+		integrationDirectory: integrationDirectory,
+		gallieniiPort:        gallieniiPort,
 	}, nil
 }
 
@@ -157,6 +165,11 @@ func main() {
 			mutex.Lock()
 			builds := parsePullRequest(conf, action, pr)
 			log.Infof("%s:%d triggered %d builds: \n", *pr.Repo.Name, pr.GetNumber(), len(builds))
+
+			// Keep the OS and Enterprise repos in sync
+			if err = syncEnterpriseRepos(conf, pr); err != nil {
+				log.Errorf("Failed to sync the OS and Enterprise repos: %s", err.Error())
+			}
 			mutex.Unlock()
 
 			for idx, build := range builds {
@@ -461,4 +474,66 @@ func stopStalePipelines (client *gitlab.Client, vars []*gitlab.PipelineVariable)
 		}
 
 	}
+}
+
+// syncEnterpriseRepos detects whether a commit has been merged to
+// the Open Source edition of a repo, and then sends a GET request to
+// the Gallienii server, asking it to synchronize the repos
+func syncEnterpriseRepos(conf *config, gpr *github.PullRequestEvent) error {
+
+	repo := gpr.GetRepo()
+	if repo == nil {
+		return fmt.Errorf("syncEnterpriseRepos: Failed to get the repository information")
+	}
+
+	// Enterprise repo sentinel
+	switch repo.GetName() {
+	case "deployments":
+	case "useradm":
+	default:
+		log.Debugf("syncEnterpriseRepos: Non-Enterprise repository detected: (%s). Not syncing", repo.GetName())
+		return nil
+	}
+
+	pr := gpr.GetPullRequest()
+	if pr == nil {
+		return fmt.Errorf("syncEnterpriseRepos: Failed to get the pull request")
+	}
+
+	// If the action is "closed" and the "merged" key is "true", the pull request was merged.
+	// While webhooks are also triggered when a pull request is synchronized, Events API timelines
+	// don't include pull request events with the "synchronize" action.
+	if gpr.GetAction() == "closed" && pr.GetMerged() {
+
+		// Only sync on Merges to master or release branches and
+		// verify release branches through [0-9].[0-9].x regex
+		branch := pr.GetBase()
+		if branch == nil {
+			return fmt.Errorf("syncEnterpriseRepos: Failed to get the base-branch of the PR: %v", branch)
+		}
+		syncBranches := regexp.MustCompile("(master|[0-9].[0-9].x)")
+		branchRef := branch.GetRef()
+		if ! syncBranches.MatchString(branchRef) {
+			log.Debugf("syncEnterpriseRepos: Detected a merge into another branch than master or a relase branch: (%s), do not sync", branchRef)
+			return nil
+		}
+
+		log.Infof("syncEnterpriseRepos: Merge to (%s) from an OS repository detected. Running 'gallienii'...", branchRef)
+		address := fmt.Sprintf("http://localhost:%s", conf.gallieniiPort)
+		resp, err := http.Get(address)
+		if err != nil {
+			err = fmt.Errorf("syncEnterpriseRepos: HTTP GET request to the Gallianii server failed wit error: %s", err.Error())
+			return err
+		}
+		defer resp.Body.Close()
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			errstr := fmt.Sprintf("syncEnterpriseRepos: Failed to read the HTTP response body from Gallienii. Err: %s",
+				err.Error())
+			return errors.New(errstr)
+		}
+		log.Debugf("Gallienii returned: %s", body)
+	}
+
+	return nil
 }
