@@ -53,6 +53,19 @@ func getConfig() (*config, error) {
 	gitlabToken := os.Getenv("GITLAB_TOKEN")
 	gitlabBaseURL := os.Getenv("GITLAB_BASE_URL")
 	integrationDirectory := os.Getenv("INTEGRATION_DIRECTORY")
+	logLevel, found := os.LookupEnv("INTEGRATION_TEST_RUNNER_LOG_LEVEL")
+
+	log.SetLevel(log.InfoLevel)
+
+	if found {
+		lvl, err := log.ParseLevel(logLevel)
+		if err != nil {
+			log.Infof("Failed to parse the 'INTEGRATION_TEST_RUNNER_LOG_LEVEL' variable, defaulting to 'InfoLevel'")
+		} else {
+			log.Infof("Set 'LogLevel' to %s", lvl)
+			log.SetLevel(lvl)
+		}
+	}
 
 	// if no env. variable is set, this is the default repo watch list
 	defaultWatchRepositories :=
