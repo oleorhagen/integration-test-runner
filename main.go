@@ -152,6 +152,13 @@ func main() {
 		event, _ := github.ParseWebHook(github.WebHookType(context.Request), payload)
 		if github.WebHookType(context.Request) == "pull_request" {
 			pr := event.(*github.PullRequestEvent)
+
+			// Do not run if the PR is a draft
+			if pr.GetPullRequest().GetDraft() {
+				log.Infof("The PR: %s/%d is a draft. Do not run tests", pr.GetRepo().GetName(), pr.GetNumber())
+				return
+			}
+
 			action := pr.GetAction()
 
 			// To run component's Pipeline create a branch in GitLab, regardless of the PR
@@ -193,11 +200,6 @@ func main() {
 func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) []buildOptions {
 	log.Info("Pull request event with action: ", action)
 	var builds []buildOptions
-
-	// Do not run the integration tests if 'NO-RUN-TESTS' is found on a separate line in the commit body
-	if pr.GetPullRequest().Body != nil && strings.Contains(*pr.GetPullRequest().Body, "NO-RUN-TESTS") {
-		return nil
-	}
 
 	repo := *pr.Repo.Name
 	commitSHA := pr.PullRequest.Head.GetSHA()
