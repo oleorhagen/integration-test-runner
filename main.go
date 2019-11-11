@@ -205,7 +205,8 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 	commitSHA := pr.PullRequest.Head.GetSHA()
 
 	// github pull request events to trigger a jenkins job for
-	if action == "opened" || action == "edited" || action == "reopened" || action == "synchronize" {
+	if action == "opened" || action == "edited" || action == "reopened" ||
+		action == "synchronize" || action == "ready_for_review" {
 
 		//GetLabel returns "mendersoftware:master", we just want the branch
 		baseBranch := strings.Split(pr.PullRequest.Base.GetLabel(), ":")[1]
@@ -377,7 +378,8 @@ func triggerBuild(conf *config, build *buildOptions) error {
 
 func createPullRequestBranch(repo, pr, action string) error {
 
-	if action != "opened" && action != "edited" && action != "reopened" && action != "synchronize" {
+	if action != "opened" && action != "edited" && action != "reopened" &&
+		action != "synchronize" && action != "ready_for_review" {
 		log.Infof("Action %s, ignoring", action)
 		return nil
 	}
