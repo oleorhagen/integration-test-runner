@@ -15,7 +15,7 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/gin-gonic/gin"
-	"github.com/google/go-github/github"
+	"github.com/google/go-github/v28/github"
 	"github.com/xanzy/go-gitlab"
 	"golang.org/x/oauth2"
 
