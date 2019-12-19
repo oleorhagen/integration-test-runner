@@ -196,7 +196,7 @@ func main() {
 
 			for idx, build := range builds {
 				log.Infof("%d: "+spew.Sdump(build)+"\n", idx+1)
-				err = triggerBuild(conf, &build)
+				err = triggerBuild(conf, &build, pr)
 				if err != nil {
 					log.Errorf("Could not start build: %s", err.Error())
 				}
@@ -276,7 +276,7 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 	return builds
 }
 
-func triggerBuild(conf *config, build *buildOptions) error {
+func triggerBuild(conf *config, build *buildOptions, pr *github.PullRequestEvent) error {
 	gitlabClient := gitlab.NewClient(nil, conf.gitlabToken)
 	err := gitlabClient.SetBaseURL(conf.gitlabBaseURL)
 	if err != nil {
@@ -310,6 +310,18 @@ func triggerBuild(conf *config, build *buildOptions) error {
 		log.Errorf("Cound not create pipeline", err.Error())
 	}
 	log.Infof("Created pipeline: %s", pipeline.WebURL)
+
+	// Comment with a build-tag and pipeline-link on the PR!
+	commentBody := fmt.Sprintf("Pipeline: https://gitlab.com/Northern.tech/Mender/%s/badges/%s/pipeline.svg\n%s", *pr.Repo.Name, pr.GetNumber(), pipeline.WebURL)
+	comment := github.IssueComment{
+		Body: &commentBody,
+	}
+	githubClient := createGitHubClient(conf)
+	_, _, err = githubClient.Issues.CreateComment(context.Background(),
+		"mendersoftware", *pr.GetRepo().Name, pr.GetNumber(), &comment)
+	if err != nil {
+		log.Infof("Failed to comment on the pr: %v, Error: %s", pr, err.Error())
+	}
 
 	return err
 }
