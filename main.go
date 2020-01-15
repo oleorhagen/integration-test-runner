@@ -814,10 +814,13 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 // stopBuildsOfMergedPRs stops any running pipelines on a PR which has been merged.
 func stopBuildsOfMergedPRs(pr github.PullRequestEvent, conf *config, build *buildOptions) error {
 
+	log.Debugf("stopBuildsOfMergedPRs: pr.GetAction: %s, merged: %b", pr.GetAction(), pr.PullRequest.GetMerged())
+
 	// If the action is "closed" and the "merged" key is "true", the pull request was merged.
 	// While webhooks are also triggered when a pull request is synchronized, Events API timelines
 	// don't include pull request events with the "synchronize" action.
 	if !(pr.GetAction() == "closed" && pr.PullRequest.GetMerged()) {
+		log.Debugf("stopBuildsOfMergedPRs: PR not merged and closed")
 		return nil
 	}
 
@@ -825,14 +828,18 @@ func stopBuildsOfMergedPRs(pr github.PullRequestEvent, conf *config, build *buil
 	// The PR has been merged. Find any running pipelines, and kill mercilessly.
 	//
 
+	log.Debugf("stopBuildsOfMergedPRs: PR: %v was merged. Find any running pipelines and kill mercilessly!", pr)
+
 	gitlabClient := gitlab.NewClient(nil, conf.gitlabToken)
 	err := gitlabClient.SetBaseURL(conf.gitlabBaseURL)
 	if err != nil {
+		log.Debug("stopBuildsOfMergedPRs: Failed to set the BaseURL of the gitlabClient")
 		return err
 	}
 
 	buildParams, err := getBuildParameters(conf, build)
 	if err != nil {
+		log.Debug("stopBuildsOfMergedPRs: Failed to get the build-parameters for the build")
 		return err
 	}
 
