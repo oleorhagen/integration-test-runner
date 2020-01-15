@@ -318,7 +318,7 @@ func triggerBuild(conf *config, build *buildOptions, pr *github.PullRequestEvent
 	log.Infof("Created pipeline: %s", pipeline.WebURL)
 
 	// Comment with a pipeline-link on the PR
-	commentBody := fmt.Sprintf("I created a pipeline for you here:\n\t[Pipeline-%d](%s)", pipeline.ID, pipeline.WebURL)
+	commentBody := fmt.Sprintf("Hello, I created a pipeline for you here: [Pipeline-%d](%s)", pipeline.ID, pipeline.WebURL)
 	comment := github.IssueComment{
 		Body: &commentBody,
 	}
