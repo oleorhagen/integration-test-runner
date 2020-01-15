@@ -167,10 +167,9 @@ func main() {
 
 			// First check if the PR has been merged. If so, stop
 			// the pipeline, and do nothing else.
-			for _, build := range builds {
-				if err = stopBuildsOfMergedPRs(*pr, conf, &build); err != nil {
-					log.Errorf("Failed to stop a stale build after the PR: %v was merged. Error: %v", pr, err)
-				}
+			log.Debugf("Parsed the PR and found: %d builds...", len(builds))
+			if err = stopBuildsOfMergedPRs(pr, conf); err != nil {
+				log.Errorf("Failed to stop a stale build after the PR: %v was merged. Error: %v", pr, err)
 			}
 
 			// To run component's Pipeline create a branch in GitLab, regardless of the PR
@@ -210,69 +209,77 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 	log.Info("Pull request event with action: ", action)
 	var builds []buildOptions
 
-	repo := *pr.Repo.Name
-	commitSHA := pr.PullRequest.Head.GetSHA()
-
 	// github pull request events to trigger a jenkins job for
 	if action == "opened" || action == "edited" || action == "reopened" ||
 		action == "synchronize" || action == "ready_for_review" {
 
-		//GetLabel returns "mendersoftware:master", we just want the branch
-		baseBranch := strings.Split(pr.PullRequest.Base.GetLabel(), ":")[1]
+		return getBuilds(conf, pr)
+	}
 
-		makeQEMU := false
+	return builds
+}
 
-		for _, watchRepo := range conf.watchRepositories {
-			// make sure the repo that the pull request is performed against is
-			// one that we are watching.
+func getBuilds(conf *config, pr *github.PullRequestEvent) []buildOptions {
 
-			if watchRepo == repo {
-				if repo == "mender" || repo == "meta-mender" || repo == "mender-artifact" {
-					makeQEMU = true
+	var builds []buildOptions
+
+	repo := *pr.Repo.Name
+
+	commitSHA := pr.PullRequest.Head.GetSHA()
+	//GetLabel returns "mendersoftware:master", we just want the branch
+	baseBranch := strings.Split(pr.PullRequest.Base.GetLabel(), ":")[1]
+
+	makeQEMU := false
+
+	for _, watchRepo := range conf.watchRepositories {
+		// make sure the repo that the pull request is performed against is
+		// one that we are watching.
+
+		if watchRepo == repo {
+			if repo == "mender" || repo == "meta-mender" || repo == "mender-artifact" {
+				makeQEMU = true
+			}
+
+			// we need to have the latest integration/master branch in order to use the release_tool.py
+			if err := updateIntegrationRepo(conf); err != nil {
+				log.Warnf(err.Error())
+			}
+
+			switch repo {
+			case "meta-mender", "integration":
+				build := buildOptions{
+					pr:         strconv.Itoa(pr.GetNumber()),
+					repo:       repo,
+					baseBranch: baseBranch,
+					commitSHA:  commitSHA,
+					makeQEMU:   makeQEMU,
 				}
+				builds = append(builds, build)
 
-				// we need to have the latest integration/master branch in order to use the release_tool.py
-				if err := updateIntegrationRepo(conf); err != nil {
-					log.Warnf(err.Error())
+			default:
+				var err error
+				integrationsToTest := []string{}
+
+				if integrationsToTest, err = getIntegrationVersionsUsingMicroservice(repo, baseBranch, conf); err != nil {
+					log.Fatalf("failed to get related microservices for repo: %s version: %s, failed with: %s\n", repo, baseBranch, err.Error())
 				}
+				log.Infof("the following integration branches: %s are using %s/%s", integrationsToTest, repo, baseBranch)
 
-				switch repo {
-				case "meta-mender", "integration":
-					build := buildOptions{
+				// one pull request can trigger multiple builds
+				for _, integrationBranch := range integrationsToTest {
+					buildOpts := buildOptions{
 						pr:         strconv.Itoa(pr.GetNumber()),
 						repo:       repo,
-						baseBranch: baseBranch,
+						baseBranch: integrationBranch,
 						commitSHA:  commitSHA,
 						makeQEMU:   makeQEMU,
 					}
-					builds = append(builds, build)
-
-				default:
-					var err error
-					integrationsToTest := []string{}
-
-					if integrationsToTest, err = getIntegrationVersionsUsingMicroservice(repo, baseBranch, conf); err != nil {
-						log.Fatalf("failed to get related microservices for repo: %s version: %s, failed with: %s\n", repo, baseBranch, err.Error())
-					}
-					log.Infof("the following integration branches: %s are using %s/%s", integrationsToTest, repo, baseBranch)
-
-					// one pull request can trigger multiple builds
-					for _, integrationBranch := range integrationsToTest {
-						buildOpts := buildOptions{
-							pr:         strconv.Itoa(pr.GetNumber()),
-							repo:       repo,
-							baseBranch: integrationBranch,
-							commitSHA:  commitSHA,
-							makeQEMU:   makeQEMU,
-						}
-						builds = append(builds, buildOpts)
-					}
+					builds = append(builds, buildOpts)
 				}
-
 			}
+
 		}
 	}
-
 	return builds
 }
 
@@ -813,8 +820,11 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 }
 
 // stopBuildsOfMergedPRs stops any running pipelines on a PR which has been merged.
-func stopBuildsOfMergedPRs(pr github.PullRequestEvent, conf *config, build *buildOptions) error {
+func stopBuildsOfMergedPRs(pr *github.PullRequestEvent, conf *config) error {
 
+	//
+	// Get all the builds when the PR is merged and closed
+	//
 	log.Debugf("stopBuildsOfMergedPRs: pr.GetAction: %s, merged: %b", pr.GetAction(), pr.PullRequest.GetMerged())
 
 	// If the action is "closed" and the "merged" key is "true", the pull request was merged.
@@ -825,26 +835,30 @@ func stopBuildsOfMergedPRs(pr github.PullRequestEvent, conf *config, build *buil
 		return nil
 	}
 
-	//
-	// The PR has been merged. Find any running pipelines, and kill mercilessly.
-	//
+	for _, build := range getBuilds(conf, pr) {
 
-	log.Debugf("stopBuildsOfMergedPRs: PR: %v was merged. Find any running pipelines and kill mercilessly!", pr)
+		//
+		// The PR has been merged. Find any running pipelines, and kill mercilessly.
+		//
 
-	gitlabClient := gitlab.NewClient(nil, conf.gitlabToken)
-	err := gitlabClient.SetBaseURL(conf.gitlabBaseURL)
-	if err != nil {
-		log.Debug("stopBuildsOfMergedPRs: Failed to set the BaseURL of the gitlabClient")
-		return err
+		log.Debugf("stopBuildsOfMergedPRs: PR: %v was merged. Find any running pipelines and kill mercilessly!", pr)
+
+		gitlabClient := gitlab.NewClient(nil, conf.gitlabToken)
+		err := gitlabClient.SetBaseURL(conf.gitlabBaseURL)
+		if err != nil {
+			log.Debug("stopBuildsOfMergedPRs: Failed to set the BaseURL of the gitlabClient")
+			return err
+		}
+
+		buildParams, err := getBuildParameters(conf, &build)
+		if err != nil {
+			log.Debug("stopBuildsOfMergedPRs: Failed to get the build-parameters for the build")
+			return err
+		}
+
+		stopStalePipelines(gitlabClient, buildParams)
 	}
-
-	buildParams, err := getBuildParameters(conf, build)
-	if err != nil {
-		log.Debug("stopBuildsOfMergedPRs: Failed to get the build-parameters for the build")
-		return err
-	}
-
-	stopStalePipelines(gitlabClient, buildParams)
 
 	return nil
+
 }
