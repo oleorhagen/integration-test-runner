@@ -320,7 +320,7 @@ func triggerBuild(conf *config, build *buildOptions, pr *github.PullRequestEvent
 
 	// Comment with a build-tag and pipeline-link on the PR!
 	log.Debug("triggerBuild: Commenting on PR in: %s, with number: %d, and URL: %s", pr.Repo.Name, pr.GetNumber(), pipeline.WebURL)
-	commentBody := fmt.Sprintf("Pipeline: https://gitlab.com/Northern.tech/Mender/%s/badges/%s/pipeline.svg\n%s", *pr.Repo.Name, "pr_"+strconv.Itoa(pr.GetNumber()), pipeline.WebURL)
+	commentBody := fmt.Sprintf("[![build-status](https://gitlab.com/Northern.tech/Mender/%s/badges/%s/pipeline.svg)](%s)", *pr.Repo.Name, "pr_"+strconv.Itoa(pr.GetNumber()), pipeline.WebURL)
 	comment := github.IssueComment{
 		Body: &commentBody,
 	}
