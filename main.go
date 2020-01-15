@@ -167,7 +167,6 @@ func main() {
 
 			// First check if the PR has been merged. If so, stop
 			// the pipeline, and do nothing else.
-			log.Debugf("Parsed the PR and found: %d builds...", len(builds))
 			if err = stopBuildsOfMergedPRs(pr, conf); err != nil {
 				log.Errorf("Failed to stop a stale build after the PR: %v was merged. Error: %v", pr, err)
 			}
