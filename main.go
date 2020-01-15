@@ -319,7 +319,6 @@ func triggerBuild(conf *config, build *buildOptions, pr *github.PullRequestEvent
 	log.Infof("Created pipeline: %s", pipeline.WebURL)
 
 	// Comment with a build-tag and pipeline-link on the PR!
-	log.Debug("triggerBuild: Commenting on PR in: %s, with number: %d, and URL: %s", pr.Repo.Name, pr.GetNumber(), pipeline.WebURL)
 	commentBody := fmt.Sprintf("[![build-status](https://gitlab.com/Northern.tech/Mender/%s/badges/%s/pipeline.svg)](%s)", *pr.Repo.Name, "pr_"+strconv.Itoa(pr.GetNumber()), pipeline.WebURL)
 	comment := github.IssueComment{
 		Body: &commentBody,
@@ -822,11 +821,6 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 // stopBuildsOfMergedPRs stops any running pipelines on a PR which has been merged.
 func stopBuildsOfMergedPRs(pr *github.PullRequestEvent, conf *config) error {
 
-	//
-	// Get all the builds when the PR is merged and closed
-	//
-	log.Debugf("stopBuildsOfMergedPRs: pr.GetAction: %s, merged: %b", pr.GetAction(), pr.PullRequest.GetMerged())
-
 	// If the action is "closed" and the "merged" key is "true", the pull request was merged.
 	// While webhooks are also triggered when a pull request is synchronized, Events API timelines
 	// don't include pull request events with the "synchronize" action.
@@ -835,13 +829,9 @@ func stopBuildsOfMergedPRs(pr *github.PullRequestEvent, conf *config) error {
 		return nil
 	}
 
+	log.Debug("stopBuildsOfMergedPRs: Find any running pipelines and kill mercilessly!")
+
 	for _, build := range getBuilds(conf, pr) {
-
-		//
-		// The PR has been merged. Find any running pipelines, and kill mercilessly.
-		//
-
-		log.Debugf("stopBuildsOfMergedPRs: PR: %v was merged. Find any running pipelines and kill mercilessly!", pr)
 
 		gitlabClient := gitlab.NewClient(nil, conf.gitlabToken)
 		err := gitlabClient.SetBaseURL(conf.gitlabBaseURL)
