@@ -181,6 +181,7 @@ func main() {
 			// Then, continue to the integration Pipeline only for mendersoftware members
 			if member, _, _ := githubClient.Organizations.IsMember(context, "mendersoftware", pr.Sender.GetLogin()); !member {
 				log.Warnf("%s is making a pullrequest, but he/she is not a member of mendersoftware, ignoring", pr.Sender.GetLogin())
+				mutex.Unlock()
 				return
 			}
 
