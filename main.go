@@ -161,6 +161,16 @@ func main() {
 
 			action := pr.GetAction()
 
+			// make sure we only parse one pr at a time, since we use git
+			mutex.Lock()
+			builds := parsePullRequest(conf, action, pr)
+
+			// First check if the PR has been merged. If so, stop
+			// the pipeline, and do nothing else.
+			if err = stopBuildsOfMergedPRs(pr, conf); err != nil {
+				log.Errorf("Failed to stop a stale build after the PR: %v was merged. Error: %v", pr, err)
+			}
+
 			// To run component's Pipeline create a branch in GitLab, regardless of the PR
 			// coming from a mendersoftware member or not (equivalent to the old Travis tests)
 			err := createPullRequestBranch(*pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action)
@@ -171,12 +181,10 @@ func main() {
 			// Then, continue to the integration Pipeline only for mendersoftware members
 			if member, _, _ := githubClient.Organizations.IsMember(context, "mendersoftware", pr.Sender.GetLogin()); !member {
 				log.Warnf("%s is making a pullrequest, but he/she is not a member of mendersoftware, ignoring", pr.Sender.GetLogin())
+				mutex.Unlock()
 				return
 			}
 
-			// make sure we only parse one pr at a time, since we use git
-			mutex.Lock()
-			builds := parsePullRequest(conf, action, pr)
 			log.Infof("%s:%d triggered %d builds: \n", *pr.Repo.Name, pr.GetNumber(), len(builds))
 
 			// Keep the OS and Enterprise repos in sync
@@ -187,7 +195,7 @@ func main() {
 
 			for idx, build := range builds {
 				log.Infof("%d: "+spew.Sdump(build)+"\n", idx+1)
-				err = triggerBuild(conf, &build)
+				err = triggerBuild(conf, &build, pr)
 				if err != nil {
 					log.Errorf("Could not start build: %s", err.Error())
 				}
@@ -201,154 +209,91 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 	log.Info("Pull request event with action: ", action)
 	var builds []buildOptions
 
-	repo := *pr.Repo.Name
-	commitSHA := pr.PullRequest.Head.GetSHA()
-
 	// github pull request events to trigger a jenkins job for
 	if action == "opened" || action == "edited" || action == "reopened" ||
 		action == "synchronize" || action == "ready_for_review" {
 
-		//GetLabel returns "mendersoftware:master", we just want the branch
-		baseBranch := strings.Split(pr.PullRequest.Base.GetLabel(), ":")[1]
-
-		makeQEMU := false
-
-		for _, watchRepo := range conf.watchRepositories {
-			// make sure the repo that the pull request is performed against is
-			// one that we are watching.
-
-			if watchRepo == repo {
-				if repo == "mender" || repo == "meta-mender" || repo == "mender-artifact" {
-					makeQEMU = true
-				}
-
-				// we need to have the latest integration/master branch in order to use the release_tool.py
-				if err := updateIntegrationRepo(conf); err != nil {
-					log.Warnf(err.Error())
-				}
-
-				switch repo {
-				case "meta-mender", "integration":
-					build := buildOptions{
-						pr:         strconv.Itoa(pr.GetNumber()),
-						repo:       repo,
-						baseBranch: baseBranch,
-						commitSHA:  commitSHA,
-						makeQEMU:   makeQEMU,
-					}
-					builds = append(builds, build)
-
-				default:
-					var err error
-					integrationsToTest := []string{}
-
-					if integrationsToTest, err = getIntegrationVersionsUsingMicroservice(repo, baseBranch, conf); err != nil {
-						log.Fatalf("failed to get related microservices for repo: %s version: %s, failed with: %s\n", repo, baseBranch, err.Error())
-					}
-					log.Infof("the following integration branches: %s are using %s/%s", integrationsToTest, repo, baseBranch)
-
-					// one pull request can trigger multiple builds
-					for _, integrationBranch := range integrationsToTest {
-						buildOpts := buildOptions{
-							pr:         strconv.Itoa(pr.GetNumber()),
-							repo:       repo,
-							baseBranch: integrationBranch,
-							commitSHA:  commitSHA,
-							makeQEMU:   makeQEMU,
-						}
-						builds = append(builds, buildOpts)
-					}
-				}
-
-			}
-		}
+		return getBuilds(conf, pr)
 	}
 
 	return builds
 }
 
-func triggerBuild(conf *config, build *buildOptions) error {
+func getBuilds(conf *config, pr *github.PullRequestEvent) []buildOptions {
+
+	var builds []buildOptions
+
+	repo := *pr.Repo.Name
+
+	commitSHA := pr.PullRequest.Head.GetSHA()
+	//GetLabel returns "mendersoftware:master", we just want the branch
+	baseBranch := strings.Split(pr.PullRequest.Base.GetLabel(), ":")[1]
+
+	makeQEMU := false
+
+	for _, watchRepo := range conf.watchRepositories {
+		// make sure the repo that the pull request is performed against is
+		// one that we are watching.
+
+		if watchRepo == repo {
+			if repo == "mender" || repo == "meta-mender" || repo == "mender-artifact" {
+				makeQEMU = true
+			}
+
+			// we need to have the latest integration/master branch in order to use the release_tool.py
+			if err := updateIntegrationRepo(conf); err != nil {
+				log.Warnf(err.Error())
+			}
+
+			switch repo {
+			case "meta-mender", "integration":
+				build := buildOptions{
+					pr:         strconv.Itoa(pr.GetNumber()),
+					repo:       repo,
+					baseBranch: baseBranch,
+					commitSHA:  commitSHA,
+					makeQEMU:   makeQEMU,
+				}
+				builds = append(builds, build)
+
+			default:
+				var err error
+				integrationsToTest := []string{}
+
+				if integrationsToTest, err = getIntegrationVersionsUsingMicroservice(repo, baseBranch, conf); err != nil {
+					log.Fatalf("failed to get related microservices for repo: %s version: %s, failed with: %s\n", repo, baseBranch, err.Error())
+				}
+				log.Infof("the following integration branches: %s are using %s/%s", integrationsToTest, repo, baseBranch)
+
+				// one pull request can trigger multiple builds
+				for _, integrationBranch := range integrationsToTest {
+					buildOpts := buildOptions{
+						pr:         strconv.Itoa(pr.GetNumber()),
+						repo:       repo,
+						baseBranch: integrationBranch,
+						commitSHA:  commitSHA,
+						makeQEMU:   makeQEMU,
+					}
+					builds = append(builds, buildOpts)
+				}
+			}
+
+		}
+	}
+	return builds
+}
+
+func triggerBuild(conf *config, build *buildOptions, pr *github.PullRequestEvent) error {
 	gitlabClient := gitlab.NewClient(nil, conf.gitlabToken)
 	err := gitlabClient.SetBaseURL(conf.gitlabBaseURL)
 	if err != nil {
 		return err
 	}
 
-	readHead := "pull/" + build.pr + "/head"
-	var buildParameters []*gitlab.PipelineVariable
-
-	var versionedRepositories []string
-	if build.repo == "meta-mender" {
-		// For meta-mender, pick master versions of all Mender release repos.
-		versionedRepositories, err = getListOfVersionedRepositories("origin/master")
-	} else {
-		versionedRepositories, err = getListOfVersionedRepositories("origin/" + build.baseBranch)
-	}
+	buildParameters, err := getBuildParameters(conf, build)
 	if err != nil {
-		log.Errorf("Could not get list of repositories: %s", err.Error())
 		return err
 	}
-
-	for _, versionedRepo := range versionedRepositories {
-		// iterate over all the repositories (except the one we are testing) and
-		// set the correct microservice versions
-
-		// use the default "master" for both mender-qa, and meta-mender (set in Jenkins)
-		if versionedRepo != build.repo &&
-			versionedRepo != "integration" &&
-			build.repo != "meta-mender" {
-			if version, err := getServiceRevisionFromIntegration(versionedRepo, build.baseBranch); err != nil {
-				log.Errorf("failed to determine %s version: %s", versionedRepo, err.Error())
-				return err
-			} else {
-				log.Infof("%s version %s is being used in %s: ", versionedRepo, version, build.baseBranch)
-				buildParameters = append(buildParameters, &gitlab.PipelineVariable{repoToBuildParameter(versionedRepo), version})
-			}
-		}
-	}
-
-	// set the correct integraton branches if we aren't performing a pull request again integration
-	if build.repo != "integration" && build.repo != "meta-mender" {
-		buildParameters = append(buildParameters, &gitlab.PipelineVariable{repoToBuildParameter("integration"), build.baseBranch})
-	}
-
-	// set the poky branch equal to the meta-mender base branch, unless it
-	// is master, in which case we rely on the default.
-	if build.repo == "meta-mender" && build.baseBranch != "master" {
-		buildParameters = append(buildParameters, &gitlab.PipelineVariable{repoToBuildParameter("poky"), build.baseBranch})
-	}
-
-	// set the rest of the jenkins build parameters
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BASE_BRANCH", build.baseBranch})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"RUN_INTEGRATION_TESTS", "true"})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{repoToBuildParameter(build.repo), readHead})
-
-	var qemuParam string
-	if build.makeQEMU {
-		qemuParam = "true"
-	} else {
-		qemuParam = ""
-	}
-
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_QEMUX86_64_UEFI_GRUB", qemuParam})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_QEMUX86_64_UEFI_GRUB", qemuParam})
-
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_QEMUX86_64_BIOS_GRUB", qemuParam})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_QEMUX86_64_BIOS_GRUB", qemuParam})
-
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_QEMUX86_64_BIOS_GRUB_GPT", qemuParam})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_QEMUX86_64_BIOS_GRUB_GPT", qemuParam})
-
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_VEXPRESS_QEMU", qemuParam})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_VEXPRESS_QEMU", qemuParam})
-
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_VEXPRESS_QEMU_FLASH", qemuParam})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_VEXPRESS_QEMU_FLASH", qemuParam})
-
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_VEXPRESS_QEMU_UBOOT_UEFI_GRUB", qemuParam})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_VEXPRESS_QEMU_UBOOT_UEFI_GRUB", qemuParam})
-
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_BEAGLEBONEBLACK", qemuParam})
 
 	// first stop old pipelines with the same buildParameters
 	stopStalePipelines(gitlabClient, buildParameters)
@@ -372,6 +317,18 @@ func triggerBuild(conf *config, build *buildOptions) error {
 		log.Errorf("Cound not create pipeline", err.Error())
 	}
 	log.Infof("Created pipeline: %s", pipeline.WebURL)
+
+	// Comment with a pipeline-link on the PR
+	commentBody := fmt.Sprintf("Hello :smile_cat: I created a pipeline for you here: [Pipeline-%d](%s)", pipeline.ID, pipeline.WebURL)
+	comment := github.IssueComment{
+		Body: &commentBody,
+	}
+	githubClient := createGitHubClient(conf)
+	_, _, err = githubClient.Issues.CreateComment(context.Background(),
+		"mendersoftware", *pr.GetRepo().Name, pr.GetNumber(), &comment)
+	if err != nil {
+		log.Infof("Failed to comment on the pr: %v, Error: %s", pr, err.Error())
+	}
 
 	return err
 }
@@ -774,4 +731,124 @@ func commentToNotifyUser(args commentArgs) error {
 	_, _, err := client.Issues.CreateComment(context.Background(), "mendersoftware", args.repo, args.pr.GetNumber(), &comment)
 
 	return err
+}
+
+func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVariable, error) {
+	gitlabClient := gitlab.NewClient(nil, conf.gitlabToken)
+	err := gitlabClient.SetBaseURL(conf.gitlabBaseURL)
+	if err != nil {
+		return nil, err
+	}
+
+	readHead := "pull/" + build.pr + "/head"
+	var buildParameters []*gitlab.PipelineVariable
+
+	var versionedRepositories []string
+	if build.repo == "meta-mender" {
+		// For meta-mender, pick master versions of all Mender release repos.
+		versionedRepositories, err = getListOfVersionedRepositories("origin/master")
+	} else {
+		versionedRepositories, err = getListOfVersionedRepositories("origin/" + build.baseBranch)
+	}
+	if err != nil {
+		log.Errorf("Could not get list of repositories: %s", err.Error())
+		return nil, err
+	}
+
+	for _, versionedRepo := range versionedRepositories {
+		// iterate over all the repositories (except the one we are testing) and
+		// set the correct microservice versions
+
+		// use the default "master" for both mender-qa, and meta-mender (set in Jenkins)
+		if versionedRepo != build.repo &&
+			versionedRepo != "integration" &&
+			build.repo != "meta-mender" {
+			if version, err := getServiceRevisionFromIntegration(versionedRepo, build.baseBranch); err != nil {
+				log.Errorf("failed to determine %s version: %s", versionedRepo, err.Error())
+				return nil, err
+			} else {
+				log.Infof("%s version %s is being used in %s: ", versionedRepo, version, build.baseBranch)
+				buildParameters = append(buildParameters, &gitlab.PipelineVariable{repoToBuildParameter(versionedRepo), version})
+			}
+		}
+	}
+
+	// set the correct integraton branches if we aren't performing a pull request again integration
+	if build.repo != "integration" && build.repo != "meta-mender" {
+		buildParameters = append(buildParameters, &gitlab.PipelineVariable{repoToBuildParameter("integration"), build.baseBranch})
+	}
+
+	// set the poky branch equal to the meta-mender base branch, unless it
+	// is master, in which case we rely on the default.
+	if build.repo == "meta-mender" && build.baseBranch != "master" {
+		buildParameters = append(buildParameters, &gitlab.PipelineVariable{repoToBuildParameter("poky"), build.baseBranch})
+	}
+
+	// set the rest of the jenkins build parameters
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BASE_BRANCH", build.baseBranch})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"RUN_INTEGRATION_TESTS", "true"})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{repoToBuildParameter(build.repo), readHead})
+
+	var qemuParam string
+	if build.makeQEMU {
+		qemuParam = "true"
+	} else {
+		qemuParam = ""
+	}
+
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_QEMUX86_64_UEFI_GRUB", qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_QEMUX86_64_UEFI_GRUB", qemuParam})
+
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_QEMUX86_64_BIOS_GRUB", qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_QEMUX86_64_BIOS_GRUB", qemuParam})
+
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_QEMUX86_64_BIOS_GRUB_GPT", qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_QEMUX86_64_BIOS_GRUB_GPT", qemuParam})
+
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_VEXPRESS_QEMU", qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_VEXPRESS_QEMU", qemuParam})
+
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_VEXPRESS_QEMU_FLASH", qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_VEXPRESS_QEMU_FLASH", qemuParam})
+
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_VEXPRESS_QEMU_UBOOT_UEFI_GRUB", qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_VEXPRESS_QEMU_UBOOT_UEFI_GRUB", qemuParam})
+
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_BEAGLEBONEBLACK", qemuParam})
+	return buildParameters, nil
+}
+
+// stopBuildsOfMergedPRs stops any running pipelines on a PR which has been merged.
+func stopBuildsOfMergedPRs(pr *github.PullRequestEvent, conf *config) error {
+
+	// If the action is "closed" and the "merged" key is "true", the pull request was merged.
+	// While webhooks are also triggered when a pull request is synchronized, Events API timelines
+	// don't include pull request events with the "synchronize" action.
+	if !(pr.GetAction() == "closed" && pr.PullRequest.GetMerged()) {
+		log.Debugf("stopBuildsOfMergedPRs: PR not merged and closed")
+		return nil
+	}
+
+	log.Debug("stopBuildsOfMergedPRs: Find any running pipelines and kill mercilessly!")
+
+	for _, build := range getBuilds(conf, pr) {
+
+		gitlabClient := gitlab.NewClient(nil, conf.gitlabToken)
+		err := gitlabClient.SetBaseURL(conf.gitlabBaseURL)
+		if err != nil {
+			log.Debug("stopBuildsOfMergedPRs: Failed to set the BaseURL of the gitlabClient")
+			return err
+		}
+
+		buildParams, err := getBuildParameters(conf, &build)
+		if err != nil {
+			log.Debug("stopBuildsOfMergedPRs: Failed to get the build-parameters for the build")
+			return err
+		}
+
+		stopStalePipelines(gitlabClient, buildParams)
+	}
+
+	return nil
+
 }
