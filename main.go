@@ -74,6 +74,7 @@ func getConfig() (*config, error) {
 			"deviceadm",
 			"deviceauth",
 			"inventory",
+			"inventory-enterprise",
 			"useradm",
 			"integration",
 			"mender",
@@ -457,6 +458,7 @@ func syncIfOSHasEnterpriseRepo(conf *config, gpr *github.PullRequestEvent) error
 	// Enterprise repo sentinel
 	switch repo.GetName() {
 	case "deployments":
+	case "inventory":
 	case "useradm":
 	default:
 		log.Debugf("syncIfOSHasEnterpriseRepo: Repository without Enterprise fork detected: (%s). Not syncing", repo.GetName())
