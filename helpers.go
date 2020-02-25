@@ -24,7 +24,7 @@ func getServiceRevisionFromIntegration(repo, baseBranch string) (string, error) 
 	defer t.Stop()
 
 	if err := gitcmd.Run(); err != nil {
-		return "", fmt.Errorf("failed to 'git pull' integration folder: %s\n", err.Error())
+		return "", fmt.Errorf("failed to 'git clone' the integration folder: %s\n", err.Error())
 	}
 
 	c := exec.Command(tmp+"/extra/release_tool.py", "--version-of", repo)
