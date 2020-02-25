@@ -467,7 +467,7 @@ func syncIfOSHasEnterpriseRepo(conf *config, gpr *github.PullRequestEvent) error
 
 	pr := gpr.GetPullRequest()
 	if pr == nil {
-		return fmt.Errorf("syncIfOSHasEnterpriseRepo: Failed to get the pull request")
+		return fmt.Error("syncIfOSHasEnterpriseRepo: Failed to get the pull request")
 	}
 
 	// If the action is "closed" and the "merged" key is "true", the pull request was merged.
