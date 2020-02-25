@@ -263,7 +263,8 @@ func getBuilds(conf *config, pr *github.PullRequestEvent) []buildOptions {
 				integrationsToTest := []string{}
 
 				if integrationsToTest, err = getIntegrationVersionsUsingMicroservice(repo, baseBranch, conf); err != nil {
-					log.Fatalf("failed to get related microservices for repo: %s version: %s, failed with: %s\n", repo, baseBranch, err.Error())
+					log.Errorf("failed to get related microservices for repo: %s version: %s, failed with: %s\n", repo, baseBranch, err.Error())
+					return nil
 				}
 				log.Infof("the following integration branches: %s are using %s/%s", integrationsToTest, repo, baseBranch)
 
