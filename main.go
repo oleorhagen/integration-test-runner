@@ -72,11 +72,11 @@ func getConfig() (*config, error) {
 	defaultWatchRepositories :=
 		[]string{
 			"deployments",
+			"deployments-enterprise",
 			"deviceadm",
 			"deviceauth",
 			"inventory",
 			"inventory-enterprise",
-			"useradm",
 			"integration",
 			"mender",
 			"mender-artifact",
@@ -86,8 +86,10 @@ func getConfig() (*config, error) {
 			"meta-mender",
 			"mender-api-gateway-docker",
 			"tenantadm",
-			"deployments-enterprise",
+			"useradm",
 			"useradm-enterprise",
+			"workflows",
+			"workflows-enterprise",
 		}
 
 	watchRepositories := os.Getenv("WATCH_REPOS")
@@ -462,6 +464,7 @@ func syncIfOSHasEnterpriseRepo(conf *config, gpr *github.PullRequestEvent) error
 	case "deployments":
 	case "inventory":
 	case "useradm":
+	case "workflows":
 	default:
 		log.Debugf("syncIfOSHasEnterpriseRepo: Repository without Enterprise fork detected: (%s). Not syncing", repo.GetName())
 		return nil
