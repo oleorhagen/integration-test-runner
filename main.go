@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -74,6 +75,7 @@ func getConfig() (*config, error) {
 			"deviceadm",
 			"deviceauth",
 			"inventory",
+			"inventory-enterprise",
 			"useradm",
 			"integration",
 			"mender",
@@ -261,7 +263,8 @@ func getBuilds(conf *config, pr *github.PullRequestEvent) []buildOptions {
 				integrationsToTest := []string{}
 
 				if integrationsToTest, err = getIntegrationVersionsUsingMicroservice(repo, baseBranch, conf); err != nil {
-					log.Fatalf("failed to get related microservices for repo: %s version: %s, failed with: %s\n", repo, baseBranch, err.Error())
+					log.Errorf("failed to get related microservices for repo: %s version: %s, failed with: %s\n", repo, baseBranch, err.Error())
+					return nil
 				}
 				log.Infof("the following integration branches: %s are using %s/%s", integrationsToTest, repo, baseBranch)
 
@@ -457,6 +460,7 @@ func syncIfOSHasEnterpriseRepo(conf *config, gpr *github.PullRequestEvent) error
 	// Enterprise repo sentinel
 	switch repo.GetName() {
 	case "deployments":
+	case "inventory":
 	case "useradm":
 	default:
 		log.Debugf("syncIfOSHasEnterpriseRepo: Repository without Enterprise fork detected: (%s). Not syncing", repo.GetName())
@@ -465,7 +469,7 @@ func syncIfOSHasEnterpriseRepo(conf *config, gpr *github.PullRequestEvent) error
 
 	pr := gpr.GetPullRequest()
 	if pr == nil {
-		return fmt.Errorf("syncIfOSHasEnterpriseRepo: Failed to get the pull request")
+		return errors.New("syncIfOSHasEnterpriseRepo: Failed to get the pull request")
 	}
 
 	// If the action is "closed" and the "merged" key is "true", the pull request was merged.
