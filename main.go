@@ -775,7 +775,7 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 				log.Errorf("failed to determine %s version: %s", versionedRepo, err.Error())
 				return nil, err
 			}
-			log.Infof("%s version %s is being used in %s: ", versionedRepo, version, build.baseBranch)
+			log.Infof("%s version %s is being used in %s", versionedRepo, version, build.baseBranch)
 			buildParameters = append(buildParameters, &gitlab.PipelineVariable{repoToBuildParameter(versionedRepo), version})
 		}
 	}
