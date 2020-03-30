@@ -770,7 +770,7 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 		if versionedRepo != build.repo &&
 			versionedRepo != "integration" &&
 			build.repo != "meta-mender" {
-			version, err := getServiceRevisionFromIntegration(versionedRepo, "origin/" + build.baseBranch, conf)
+			version, err := getServiceRevisionFromIntegration(versionedRepo, "origin/"+build.baseBranch, conf)
 			if err != nil {
 				log.Errorf("failed to determine %s version: %s", versionedRepo, err.Error())
 				return nil, err
