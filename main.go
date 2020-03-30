@@ -43,6 +43,10 @@ type buildOptions struct {
 	makeQEMU   bool
 }
 
+var githubRepoToGitLabProject = map[string]string{
+	"saas": "Northern.tech/MenderSaaS/saas",
+}
+
 const (
 	GIT_OPERATION_TIMEOUT = 30
 )
@@ -366,7 +370,12 @@ func createPullRequestBranch(repo, pr, action string) error {
 		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	gitcmd = exec.Command("git", "remote", "add", "gitlab", "git@gitlab.com:Northern.tech/Mender/"+repo)
+	// By default, assume the GitLab project is Northern.tech/Mender/<repo>
+	remoteURL := "git@gitlab.com:Northern.tech/Mender/" + repo
+	if v, ok := githubRepoToGitLabProject[repo]; ok {
+		remoteURL = "git@gitlab.com:" + v
+	}
+	gitcmd = exec.Command("git", "remote", "add", "gitlab", remoteURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
 	if err != nil {
@@ -770,7 +779,7 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 		if versionedRepo != build.repo &&
 			versionedRepo != "integration" &&
 			build.repo != "meta-mender" {
-			version, err := getServiceRevisionFromIntegration(versionedRepo, "origin/" + build.baseBranch, conf)
+			version, err := getServiceRevisionFromIntegration(versionedRepo, "origin/"+build.baseBranch, conf)
 			if err != nil {
 				log.Errorf("failed to determine %s version: %s", versionedRepo, err.Error())
 				return nil, err
