@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"text/template"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/gin-gonic/gin"
@@ -547,6 +549,8 @@ func syncIfOSHasEnterpriseRepo(conf *config, gpr *github.PullRequestEvent) error
 					mergeConflicts: !merged,
 					repo:           repo.GetName() + "-enterprise",
 					userName:       userName,
+					prBranchName:   PRBranchName,
+					branchName:     branchRef,
 				})
 				if err != nil {
 					log.Errorf("syncIfOSHasEnterpriseRepo: %s", err.Error())
@@ -724,7 +728,10 @@ type commentArgs struct {
 	conf           *config
 	mergeConflicts bool
 	repo           string
+	repoOS         string
 	userName       string
+	prBranchName   string
+	branchName     string
 }
 
 func commentToNotifyUser(args commentArgs) error {
@@ -734,10 +741,58 @@ func commentToNotifyUser(args commentArgs) error {
 	if !args.mergeConflicts {
 		commentBody = fmt.Sprintf("@%s I have created a PR for you, ready to merge as soon as tests are passed", args.userName)
 	} else {
-		msg := "@%s I have created a PR for you. Unfortunately there were some merge conflicts " +
-			"which I failed to resolve automatically. Therefore the branch of this PR " +
-			"is ready to be merged locally, and then pushed here :)"
-		commentBody = fmt.Sprintf(msg, args.userName)
+		tmplString := `
+@{{.UserName}} I have created a PR for you.
+
+Unfortunately, a merge conflict was detected. This means that the conflict will have to be resolved manually by you, human. Then pushed to the PR-branch, once all conflicts are resolved.
+This can be done by following:
+
+<details>
+    <summary><small>this</small> recipe</summary><p>
+
+1. Make sure that the 'mender-test-bot' remote is present in your repository, or else add it with:
+    1. {{.BackQuote}}git remote add mender-test-bot git@github.com:mender-test-bot/{{.Repo}}-enterprise.git{{.BackQuote}}
+
+2. Fetch the remote branches
+    1. {{.BackQuote}}git fetch origin {{.BranchName}}:localtmp{{.BackQuote}}
+    2. {{.BackQuote}}git fetch mender-test-bot {{.PRBranchName}}{{.BackQuote}}
+
+3. Checkout the localtmp branch
+    1. {{.BackQuote}}git checkout localtmp{{.BackQuote}}
+
+4. Merge the branch into the PR branch
+    1. {{.BackQuote}}git merge mender-test-bot/{{.PRBranchName}}{{.BackQuote}}
+
+5. Resolve all conflicts
+
+6. Commit the merged changes
+
+7. Push to the PR branch
+    1. {{.BackQuote}}git push mender-test-bot localtmp:{{.PRBranchName}}{{.BackQuote}}
+
+ </p></details>
+`
+		tmpl, err := template.New("Main").Parse(tmplString)
+		if err != nil {
+			log.Error("The text template should never fail to render!")
+		}
+		var buf bytes.Buffer
+		if err := tmpl.Execute(&buf, struct {
+			UserName     string
+			Repo         string
+			PRBranchName string
+			BranchName   string
+			BackQuote    string
+		}{
+			UserName:     args.userName,
+			Repo:         args.repoOS,
+			PRBranchName: args.prBranchName,
+			BranchName:   args.branchName,
+			BackQuote: "`",
+		}); err != nil {
+			log.Errorf("Failed to execute the merge-conflict PR template string. Error: %s", err.Error())
+		}
+		commentBody = buf.String()
 	}
 	comment := github.IssueComment{
 		Body: &commentBody,
