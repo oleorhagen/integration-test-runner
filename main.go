@@ -49,6 +49,28 @@ var githubRepoToGitLabProject = map[string]string{
 	"saas": "Northern.tech/MenderSaaS/saas",
 }
 
+var enterpriseRepositories = []string{
+	// backend
+	"deployments-enterprise",
+	"inventory-enterprise",
+	"tenantadm",
+	"useradm-enterprise",
+	"workflows-enterprise",
+	"mender-conductor-enterprise",
+	"mender-helm",
+	// client
+	"mender-binary-delta",
+	// docs
+	"mender-docs-site",
+	// saas
+	"saas",
+	"saas-tools",
+	"sre-tools",
+	// mender-qa is in fact an open source repo but the project
+	// in GitLab is kept private; hence it requires manual sync
+	"mender-qa",
+}
+
 const (
 	GIT_OPERATION_TIMEOUT = 30
 )
@@ -210,6 +232,20 @@ func main() {
 				err = triggerBuild(conf, &build, pr)
 				if err != nil {
 					log.Errorf("Could not start build: %s", err.Error())
+				}
+			}
+		} else if github.WebHookType(context.Request) == "push" {
+			push := event.(*github.PushEvent)
+			repoName := push.GetRepo().GetName()
+			refName := push.GetRef()
+			log.Debugf("Got push event :: repo %s :: ref %s", repoName, refName)
+			for _, repo := range enterpriseRepositories {
+				if repoName == repo {
+					err = syncRemoteRef(repoName, refName)
+					if err != nil {
+						log.Errorf("Could not sync branch: %s", err.Error())
+					}
+					break
 				}
 			}
 		}
@@ -403,6 +439,87 @@ func createPullRequestBranch(repo, pr, action string) error {
 
 	log.Infof("Created branch: %s:%s", repo, prBranchName)
 	log.Info("Pipeline is expected to start automatically")
+	return nil
+}
+
+func syncRemoteRef(repo, ref string) error {
+
+	tmpdir, err := ioutil.TempDir("", repo)
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpdir)
+
+	gitcmd := exec.Command("git", "init", ".")
+	gitcmd.Dir = tmpdir
+	out, err := gitcmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
+	}
+
+	gitcmd = exec.Command("git", "remote", "add", "github", "git@github.com:mendersoftware/"+repo)
+	gitcmd.Dir = tmpdir
+	out, err = gitcmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
+	}
+
+	// By default, assume the GitLab project is Northern.tech/Mender/<repo>
+	remoteURL := "git@gitlab.com:Northern.tech/Mender/" + repo
+	if v, ok := githubRepoToGitLabProject[repo]; ok {
+		remoteURL = "git@gitlab.com:" + v
+	}
+	gitcmd = exec.Command("git", "remote", "add", "gitlab", remoteURL)
+	gitcmd.Dir = tmpdir
+	out, err = gitcmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
+	}
+
+	if strings.Contains(ref, "tags") {
+		tagName := strings.TrimPrefix(ref, "refs/tags/")
+
+		gitcmd = exec.Command("git", "fetch", "--tags", "github")
+		gitcmd.Dir = tmpdir
+		out, err = gitcmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
+		}
+
+		gitcmd = exec.Command("git", "push", "-f", "gitlab", tagName)
+		gitcmd.Dir = tmpdir
+		out, err = gitcmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
+		}
+	} else if strings.Contains(ref, "heads") {
+		branchName := strings.TrimPrefix(ref, "refs/heads/")
+
+		gitcmd = exec.Command("git", "fetch", "github")
+		gitcmd.Dir = tmpdir
+		out, err = gitcmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
+		}
+
+		gitcmd = exec.Command("git", "checkout", "-b", branchName, "github/"+branchName)
+		gitcmd.Dir = tmpdir
+		out, err = gitcmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
+		}
+
+		gitcmd = exec.Command("git", "push", "-f", "gitlab", branchName)
+		gitcmd.Dir = tmpdir
+		out, err = gitcmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
+		}
+	} else {
+		return fmt.Errorf("Unrecognized ref %s", ref)
+	}
+
+	log.Infof("Pushed ref to GitLab: %s:%s", repo, ref)
 	return nil
 }
 
