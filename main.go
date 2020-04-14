@@ -75,8 +75,10 @@ func getConfig() (*config, error) {
 	}
 
 	// if no env. variable is set, this is the default repo watch list
+	// This list must be kept in sync with: release_tool.py --list git
 	defaultWatchRepositories :=
 		[]string{
+			"create-artifact-worker",
 			"deployments",
 			"deployments-enterprise",
 			"deviceadm",
@@ -788,7 +790,7 @@ This can be done by following:
 			Repo:         args.repoOS,
 			PRBranchName: args.prBranchName,
 			BranchName:   args.branchName,
-			BackQuote: "`",
+			BackQuote:    "`",
 		}); err != nil {
 			log.Errorf("Failed to execute the merge-conflict PR template string. Error: %s", err.Error())
 		}
