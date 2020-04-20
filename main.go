@@ -363,12 +363,42 @@ func triggerBuild(conf *config, build *buildOptions, pr *github.PullRequestEvent
 
 	pipeline, _, err := gitlabClient.Pipelines.CreatePipeline(integrationPipelinePath, opt, nil)
 	if err != nil {
-		log.Errorf("Cound not create pipeline", err.Error())
+		log.Errorf("Could not create pipeline", err.Error())
 	}
 	log.Infof("Created pipeline: %s", pipeline.WebURL)
 
+	// Add the build variable matrix to the pipeline comment under a
+	// drop-down tab
+	tmplString := `
+Hello :smile_cat: I created a pipeline for you here: [Pipeline-.Pipeline.ID](.Pipeline.WebURL)
+
+<details>
+    <summary>Build Configuration Matrix</summary><p>
+
+| Key   | Value |
+| ----- | ----- |
+{{range $i, $var := .BuildVars}} | {{$var.Key}} | {{$var.Value}} |
+{{end}}
+
+ </p></details>
+`
+	tmpl, err := template.New("Main").Parse(tmplString)
+	if err != nil {
+		log.Errorf("Failed to parse the build matrix template. Should never happen! Error: %s\n", err.Error())
+	}
+	var buf bytes.Buffer
+	if err = tmpl.Execute(&buf, struct {
+		BuildVars []*gitlab.PipelineVariable
+		Pipeline  *gitlab.Pipeline
+	}{
+		BuildVars: opt.Variables,
+		Pipeline:  pipeline,
+	}); err != nil {
+		log.Errorf("Failed to execute the build matrix template. Error: %s\n", err.Error())
+	}
+
 	// Comment with a pipeline-link on the PR
-	commentBody := fmt.Sprintf("Hello :smile_cat: I created a pipeline for you here: [Pipeline-%d](%s)", pipeline.ID, pipeline.WebURL)
+	commentBody := buf.String()
 	comment := github.IssueComment{
 		Body: &commentBody,
 	}
