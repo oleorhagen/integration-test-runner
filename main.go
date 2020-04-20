@@ -370,7 +370,7 @@ func triggerBuild(conf *config, build *buildOptions, pr *github.PullRequestEvent
 	// Add the build variable matrix to the pipeline comment under a
 	// drop-down tab
 	tmplString := `
-Hello :smile_cat: I created a pipeline for you here: [Pipeline-.Pipeline.ID](.Pipeline.WebURL)
+Hello :smile_cat: I created a pipeline for you here: [Pipeline-{{.Pipeline.ID}}]({{.Pipeline.WebURL}})
 
 <details>
     <summary>Build Configuration Matrix</summary><p>
