@@ -257,7 +257,7 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 	log.Info("Pull request event with action: ", action)
 	var builds []buildOptions
 
-	// github pull request events to trigger a jenkins job for
+	// github pull request events to trigger a Gitlab job for
 	if action == "opened" || action == "edited" || action == "reopened" ||
 		action == "synchronize" || action == "ready_for_review" {
 
@@ -961,6 +961,12 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 
 	readHead := "pull/" + build.pr + "/head"
 	var buildParameters []*gitlab.PipelineVariable
+
+	//
+	// cross-build with other repos if the branch starts with
+	// feature/<some-name>, where <some-name> will match with other
+	// feature/<some-name>
+	//
 
 	var versionedRepositories []string
 	if build.repo == "meta-mender" {
