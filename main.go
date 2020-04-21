@@ -962,12 +962,6 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 	readHead := "pull/" + build.pr + "/head"
 	var buildParameters []*gitlab.PipelineVariable
 
-	//
-	// cross-build with other repos if the branch starts with
-	// feature/<some-name>, where <some-name> will match with other
-	// feature/<some-name>
-	//
-
 	var versionedRepositories []string
 	if build.repo == "meta-mender" {
 		// For meta-mender, pick master versions of all Mender release repos.
@@ -984,7 +978,7 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 		// iterate over all the repositories (except the one we are testing) and
 		// set the correct microservice versions
 
-		// use the default "master" for both mender-qa, and meta-mender (set in Jenkins)
+		// use the default "master" for both mender-qa, and meta-mender (set in Gitlab)
 		if versionedRepo != build.repo &&
 			versionedRepo != "integration" &&
 			build.repo != "meta-mender" {
@@ -1040,7 +1034,28 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_VEXPRESS_QEMU_UBOOT_UEFI_GRUB", qemuParam})
 
 	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_BEAGLEBONEBLACK", qemuParam})
+
+
+	//
+	// cross-build with other repos if the branch starts with
+	// feature/<some-name>, where <some-name> will match with other
+	// feature/<some-name>
+	//
+	// No-Op in the case of no feature branches matching
+	filterBuildParameters(buildParameters)
+
 	return buildParameters, nil
+}
+
+// filterBuildParameters modifies a buildParameter entry with a feature branch
+// variable if it matches the value of the feature branch from the PR passed in.
+func filterBuildParameters(buildParameters []*gitlab.PipelineVariable) []*gitlab.PipelineVariable {
+	// Get all branches from all repos
+	for _, build  := range buildParameters {
+		// Get all branches
+		github.
+	}
+	return buildParameters
 }
 
 // stopBuildsOfMergedPRs stops any running pipelines on a PR which has been merged.
