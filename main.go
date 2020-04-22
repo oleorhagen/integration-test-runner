@@ -377,7 +377,7 @@ Hello :smile_cat: I created a pipeline for you here: [Pipeline-{{.Pipeline.ID}}]
 
 | Key   | Value |
 | ----- | ----- |
-{{range $i, $var := .BuildVars}} | {{$var.Key}} | {{$var.Value}} |
+{{range $i, $var := .BuildVars}}{{if $var.Value}}| {{$var.Key}} | {{$var.Value}} |{{end}}
 {{end}}
 
  </p></details>
