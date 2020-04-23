@@ -1089,12 +1089,16 @@ func filterBuildParameters(buildParameters []*gitlab.PipelineVariable) []*gitlab
 							    Name string
 						    }
 					    }
-				    } `graphql:"refs(refPrefix: \"refs/heads/\", first: 10, query: \"master\")"`
+				    } `graphql:"refs(refPrefix: \"refs/heads/\", first: 10, query: $ref)"`
 			    }
-		    } `graphql:"repositories(first: 10)"`
-	    } `graphql:"repositoryOwner(login: \"oleorhagen\")"`
+		    } `graphql:"repositories(first: 100)"`
+	    } `graphql:"repositoryOwner(login: \"mendersoftware\")"`
     }
-    err := client.Query(context.Background(), &query, nil)
+
+    variables := map[string]interface{}{
+	    "ref": githubv4.String("master"),
+    }
+    err := client.Query(context.Background(), &query, variables)
     if err != nil {
 	    fmt.Fprintf(os.Stderr, "graphQL query failed: Error: %s\n", err.Error())
     } else {
