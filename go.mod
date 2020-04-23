@@ -10,6 +10,8 @@ require (
 	github.com/google/go-querystring v1.0.1-0.20190318165438-c8c88dbee036 // indirect
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/mattn/go-isatty v0.0.8-0.20190424075123-c1975dc15c1d // indirect
+	github.com/shurcooL/githubv4 v0.0.0-20200414012201-bbc966b061dd
+	github.com/shurcooL/graphql v0.0.0-20181231061246-d48a9a75455f // indirect
 	github.com/sirupsen/logrus v1.4.2-0.20190510074101-f0375eb5b588
 	github.com/ugorji/go v1.1.5-0.20190507201401-08f7b401aef1 // indirect
 	github.com/xanzy/go-gitlab v0.20.2-0.20190923085917-a59c72c5a3c7

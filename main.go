@@ -17,6 +17,7 @@ import (
 	"text/template"
 
 	"github.com/davecgh/go-spew/spew"
+	"github.com/shurcooL/githubv4"
 	"github.com/gin-gonic/gin"
 	"github.com/google/go-github/v28/github"
 	"github.com/xanzy/go-gitlab"
@@ -1050,11 +1051,79 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 // filterBuildParameters modifies a buildParameter entry with a feature branch
 // variable if it matches the value of the feature branch from the PR passed in.
 func filterBuildParameters(buildParameters []*gitlab.PipelineVariable) []*gitlab.PipelineVariable {
-	// Get all branches from all repos
-	for _, build  := range buildParameters {
-		// Get all branches
-		github.
-	}
+    // Get all branches from all repos
+    src := oauth2.StaticTokenSource(
+	    &oauth2.Token{AccessToken: os.Getenv("GITHUB_TOKEN")},
+    )
+    httpClient := oauth2.NewClient(context.Background(), src)
+
+    // TODO - use the client used other places to pass in here
+    client := githubv4.NewClient(httpClient)
+    // The graphQL query for getting all repositories with the named ref is:
+    // {
+    // 	repositoryOwner(login: "mzedel") {
+    // 		repositories(first:10) {
+    // 			nodes {
+    // 				id
+    // 				name
+    // 				refs(refPrefix: "refs/heads/", first: 10, query: "staging") {
+    // 					edges {
+    // 						node {
+    // 							name
+    // 						}
+    // 					}
+    // 				}
+    // 			}
+    // 		}
+    // 	}
+    // }
+    var query struct {
+	    RepositoryOwner struct {
+		    Repositories struct {
+			    Nodes []struct {
+				    ID string
+				    Name string
+				    Refs struct {
+					    Edges []struct {
+						    Node struct {
+							    Name string
+						    }
+					    }
+				    } `graphql:"refs(refPrefix: \"refs/heads/\", first: 10, query: \"master\")"`
+			    }
+		    } `graphql:"repositories(first: 10)"`
+	    } `graphql:"repositoryOwner(login: \"oleorhagen\")"`
+    }
+    err := client.Query(context.Background(), &query, nil)
+    if err != nil {
+	    fmt.Fprintf(os.Stderr, "graphQL query failed: Error: %s\n", err.Error())
+    } else {
+	    // printJSON(q)
+	    // fmt.Fprintf(os.Stderr, "%v\n", query)
+	    // w := json.NewEncoder(os.Stdout)
+	    // w.SetIndent("", "\t")
+	    //  w.Encode(query)
+	    for _, repo := range query.RepositoryOwner.Repositories.Nodes {
+		    for _, ref := range repo.Refs.Edges {
+			    if ref.Node.Name != "" {
+				    for _, buildRef := range buildParameters {
+					    if buildRef.Key == repo.Name {
+						    // Replace the build ref with the matching
+						    // build-ref from the PR
+						    // TODO -- Replace
+						    buildRef.Value = "master"
+					    }
+				    }
+			    }
+		    }
+	    }
+    }
+    // for _, build  := range buildParameters {
+    // 	// Get all branches
+    // 	github.
+    // }
+
+    // For now, simply return the arguments. Need to see how the graphQL interactions work first
 	return buildParameters
 }
 
