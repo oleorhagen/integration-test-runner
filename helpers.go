@@ -27,7 +27,7 @@ func updateIntegrationRepo(conf *config) error {
 	defer t.Stop()
 
 	if err := gitcmd.Run(); err != nil {
-		return fmt.Errorf("failed to 'git pull' integration folder: %s\n", err.Error())
+		return fmt.Errorf("failed to 'git pull' integration folder: %s", err.Error())
 	}
 	return nil
 }
