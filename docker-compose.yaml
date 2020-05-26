@@ -1,0 +1,11 @@
+version: '2.1'
+services:
+  integration-test-runner:
+    build: .
+    ports:
+      - "8083:8083"
+    environment:
+      - GITLAB_BASE_URL=https://gitlab.com/api/v4
+      - GITHUB_TOKEN=$GITHUB_TOKEN
+      - GITHUB_SECRET=$GITHUB_SECRET
+      - GITLAB_TOKEN=$GITLAB_TOKEN

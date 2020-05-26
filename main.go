@@ -363,7 +363,7 @@ func triggerBuild(conf *config, build *buildOptions, pr *github.PullRequestEvent
 
 	pipeline, _, err := gitlabClient.Pipelines.CreatePipeline(integrationPipelinePath, opt, nil)
 	if err != nil {
-		log.Errorf("Could not create pipeline", err.Error())
+		log.Errorf("Could not create pipeline: %s", err.Error())
 	}
 	log.Infof("Created pipeline: %s", pipeline.WebURL)
 
@@ -683,7 +683,7 @@ func syncIfOSHasEnterpriseRepo(conf *config, gpr *github.PullRequestEvent) error
 				return fmt.Errorf("syncIfOSHasEnterpriseRepo: Failed to create a PR with error: %v", err)
 			}
 
-			log.Infof("syncIfOSHasEnterpriseRepo: Created PR: %s on Enterprise/%s/%s",
+			log.Infof("syncIfOSHasEnterpriseRepo: Created PR: %d on Enterprise/%s/%s",
 				enterprisePR.GetNumber(), repo.GetName(), branchRef)
 			log.Debugf("syncIfOSHasEnterpriseRepo: Created PR: %v", pr)
 			log.Debug("Trying to @mention the user in the newly created PR")
@@ -988,25 +988,25 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 				return nil, err
 			}
 			log.Infof("%s version %s is being used in %s", versionedRepo, version, build.baseBranch)
-			buildParameters = append(buildParameters, &gitlab.PipelineVariable{repoToBuildParameter(versionedRepo), version})
+			buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: repoToBuildParameter(versionedRepo), Value: version})
 		}
 	}
 
 	// set the correct integraton branches if we aren't performing a pull request again integration
 	if build.repo != "integration" && build.repo != "meta-mender" {
-		buildParameters = append(buildParameters, &gitlab.PipelineVariable{repoToBuildParameter("integration"), build.baseBranch})
+		buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: repoToBuildParameter("integration"), Value: build.baseBranch})
 	}
 
 	// set the poky branch equal to the meta-mender base branch, unless it
 	// is master, in which case we rely on the default.
 	if build.repo == "meta-mender" && build.baseBranch != "master" {
-		buildParameters = append(buildParameters, &gitlab.PipelineVariable{repoToBuildParameter("poky"), build.baseBranch})
+		buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: repoToBuildParameter("poky"), Value: build.baseBranch})
 	}
 
 	// set the rest of the jenkins build parameters
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BASE_BRANCH", build.baseBranch})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"RUN_INTEGRATION_TESTS", "true"})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{repoToBuildParameter(build.repo), readHead})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "BASE_BRANCH", Value: build.baseBranch})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "RUN_INTEGRATION_TESTS", Value: "true"})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: repoToBuildParameter(build.repo), Value: readHead})
 
 	var qemuParam string
 	if build.makeQEMU {
@@ -1015,25 +1015,25 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 		qemuParam = ""
 	}
 
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_QEMUX86_64_UEFI_GRUB", qemuParam})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_QEMUX86_64_UEFI_GRUB", qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "BUILD_QEMUX86_64_UEFI_GRUB", Value: qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "TEST_QEMUX86_64_UEFI_GRUB", Value: qemuParam})
 
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_QEMUX86_64_BIOS_GRUB", qemuParam})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_QEMUX86_64_BIOS_GRUB", qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "BUILD_QEMUX86_64_BIOS_GRUB", Value: qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "TEST_QEMUX86_64_BIOS_GRUB", Value: qemuParam})
 
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_QEMUX86_64_BIOS_GRUB_GPT", qemuParam})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_QEMUX86_64_BIOS_GRUB_GPT", qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "BUILD_QEMUX86_64_BIOS_GRUB_GPT", Value: qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "TEST_QEMUX86_64_BIOS_GRUB_GPT", Value: qemuParam})
 
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_VEXPRESS_QEMU", qemuParam})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_VEXPRESS_QEMU", qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "BUILD_VEXPRESS_QEMU", Value: qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "TEST_VEXPRESS_QEMU", Value: qemuParam})
 
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_VEXPRESS_QEMU_FLASH", qemuParam})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_VEXPRESS_QEMU_FLASH", qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "BUILD_VEXPRESS_QEMU_FLASH", Value: qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "TEST_VEXPRESS_QEMU_FLASH", Value: qemuParam})
 
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_VEXPRESS_QEMU_UBOOT_UEFI_GRUB", qemuParam})
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"TEST_VEXPRESS_QEMU_UBOOT_UEFI_GRUB", qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "BUILD_VEXPRESS_QEMU_UBOOT_UEFI_GRUB", Value: qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "TEST_VEXPRESS_QEMU_UBOOT_UEFI_GRUB", Value: qemuParam})
 
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{"BUILD_BEAGLEBONEBLACK", qemuParam})
+	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "BUILD_BEAGLEBONEBLACK", Value: qemuParam})
 	return buildParameters, nil
 }
 
