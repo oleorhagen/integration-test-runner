@@ -175,7 +175,8 @@ func main() {
 	githubClient := createGitHubClient(conf)
 	r := gin.Default()
 
-	r.POST("/incoming", func(context *gin.Context) {
+	// webhook for GitHub
+	r.POST("/", func(context *gin.Context) {
 		payload, err := github.ValidatePayload(context.Request, conf.githubSecret)
 
 		if err != nil {
@@ -250,7 +251,11 @@ func main() {
 			}
 		}
 	})
-	r.Run("0.0.0.0:8083")
+
+	// 200 replay for the loadbalancer
+	r.GET("/", func(_ *gin.Context) {})
+
+	r.Run("0.0.0.0:8080")
 }
 
 func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) []buildOptions {
