@@ -49,4 +49,4 @@ deploy:production:
     - gcloud config set core/disable_usage_reporting true
     - gcloud container clusters get-credentials company-websites --region us-east1 --project gp-kubernetes-269000
     # Update image in the deployment
-    - kubectl -n default set image deployment/test-runner-mender-io test-runner-mender-io=$SERVICE_IMAGE
+    - kubectl -n default set image deployment/test-runner-mender-io test-runner-mender-io=$DOCKER_REPOSITORY:$DOCKER_PUBLISH_COMMIT_TAG
