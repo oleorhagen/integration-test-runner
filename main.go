@@ -250,7 +250,7 @@ func main() {
 			}
 		}
 	})
-	r.Run("0.0.0.0:8083")
+	r.Run("0.0.0.0:8080")
 }
 
 func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) []buildOptions {
