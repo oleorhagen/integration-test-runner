@@ -9,3 +9,6 @@ services:
       - GITHUB_TOKEN=$GITHUB_TOKEN
       - GITHUB_SECRET=$GITHUB_SECRET
       - GITLAB_TOKEN=$GITLAB_TOKEN
+    # volumes:
+    #   - <path/to/key>:/root/.ssh/id_rsa
+    #   - <path/to/key.pub>:/root/.ssh/id_rsa.pub
