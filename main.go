@@ -175,6 +175,7 @@ func main() {
 	githubClient := createGitHubClient(conf)
 	r := gin.Default()
 
+	// webhook for GitHub
 	r.POST("/", func(context *gin.Context) {
 		payload, err := github.ValidatePayload(context.Request, conf.githubSecret)
 
@@ -250,6 +251,10 @@ func main() {
 			}
 		}
 	})
+
+	// 200 replay for the loadbalancer
+	r.GET("/", func(_ *gin.Context) {})
+
 	r.Run("0.0.0.0:8080")
 }
 
