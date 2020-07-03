@@ -5,6 +5,7 @@ stages:
   - test
   - build
   - publish
+  - trigger
 
 include:
   - project: 'Northern.tech/Mender/mendertesting'
@@ -22,7 +23,7 @@ include:
   export DOCKER_PUBLISH_COMMIT_TAG=${CI_COMMIT_REF_NAME}_${CI_COMMIT_SHA}
 
 deploy:production:
-  stage: publish
+  stage: trigger
   only:
     refs:
       - master
