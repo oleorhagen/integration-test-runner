@@ -175,7 +175,7 @@ func main() {
 	githubClient := createGitHubClient(conf)
 	r := gin.Default()
 
-	r.POST("/incoming", func(context *gin.Context) {
+	r.POST("/", func(context *gin.Context) {
 		payload, err := github.ValidatePayload(context.Request, conf.githubSecret)
 
 		if err != nil {
