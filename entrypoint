@@ -1,5 +1,6 @@
 #!/bin/sh
 
 ssh-keyscan github.com >> /root/.ssh/known_hosts
+ssh-keyscan gitlab.com >> /root/.ssh/known_hosts
 
 /integration-test-runner
