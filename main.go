@@ -75,6 +75,20 @@ const (
 	GIT_OPERATION_TIMEOUT = 30
 )
 
+func initLogger() {
+	// Log to stdout and with JSON format; suitable for GKE
+	formatter := &log.JSONFormatter{
+		FieldMap: log.FieldMap{
+			log.FieldKeyTime:  "time",
+			log.FieldKeyLevel: "level",
+			log.FieldKeyMsg:   "message",
+		},
+	}
+
+	log.SetOutput(os.Stdout)
+	log.SetFormatter(formatter)
+}
+
 func getConfig() (*config, error) {
 	var repositoryWatchList []string
 	githubSecret := os.Getenv("GITHUB_SECRET")
@@ -164,6 +178,9 @@ func createGitHubClient(conf *config) *github.Client {
 }
 
 func main() {
+
+	initLogger()
+
 	conf, err := getConfig()
 
 	if err != nil {
