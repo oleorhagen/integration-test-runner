@@ -58,6 +58,7 @@ var enterpriseRepositories = []string{
 	"workflows-enterprise",
 	"mender-conductor-enterprise",
 	"mender-helm",
+	"auditlogs",
 	// client
 	"mender-binary-delta",
 	// docs
@@ -134,6 +135,7 @@ func getConfig() (*config, error) {
 			"useradm-enterprise",
 			"workflows",
 			"workflows-enterprise",
+			"auditlogs",
 		}
 
 	watchRepositories := os.Getenv("WATCH_REPOS")
