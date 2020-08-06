@@ -64,6 +64,7 @@ var enterpriseRepositories = []string{
 	"mender-binary-delta",
 	// docs
 	"mender-docs-site",
+	"mender-api-docs",
 	// saas
 	"saas",
 	"saas-tools",
