@@ -220,6 +220,11 @@ func main() {
 
 			// make sure we only parse one pr at a time, since we use git
 			mutex.Lock()
+
+			if err = maybeVendorDependabotPR(pr); err != nil {
+				log.Errorf("maybeVendorDependabotPR: %v", err)
+			}
+
 			builds := parsePullRequest(conf, action, pr)
 
 			// First check if the PR has been merged. If so, stop
