@@ -75,7 +75,8 @@ func getListOfVersionedRepositories(inVersion string) ([]string, error) {
 }
 
 func validDependabotPR(pr *github.PullRequestEvent) bool {
-	return pr.GetAction() == "opened" && pr.GetSender().GetLogin() == "dependabot[bot]"
+	return (pr.GetAction() == "opened" || pr.GetAction() == "reopened") &&
+		pr.GetSender().GetLogin() == "dependabot[bot]"
 }
 
 func maybeVendorDependabotPR(pr *github.PullRequestEvent) error {
