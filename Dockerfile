@@ -4,7 +4,7 @@ WORKDIR /go/src/github.com/mendersoftware/integration-test-runner
 ADD ./ .
 RUN CGO_ENABLED=0 go build
 
-FROM alpine:3.11
+FROM golang:1.14-alpine3.11
 EXPOSE 8080
 RUN apk add git openssh python3 py3-pip
 RUN pip3 install --upgrade pyyaml
