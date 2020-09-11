@@ -1038,7 +1038,6 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 	}
 
 	// set the rest of the CI build parameters
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "BASE_BRANCH", Value: build.baseBranch})
 	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "RUN_INTEGRATION_TESTS", Value: "true"})
 	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: repoToBuildParameter(build.repo), Value: readHead})
 
