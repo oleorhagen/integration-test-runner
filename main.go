@@ -1024,7 +1024,7 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 		}
 	}
 
-	// set the correct integraton branches if we aren't performing a pull request again integration
+	// set the correct integration branches if we aren't performing a pull request against integration
 	if build.repo != "integration" && build.repo != "meta-mender" {
 		buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: repoToBuildParameter("integration"), Value: build.baseBranch})
 	}
