@@ -257,6 +257,10 @@ func main() {
 
 			for idx, build := range builds {
 				log.Infof("%d: "+spew.Sdump(build)+"\n", idx+1)
+				if build.repo == "meta-mender" && build.baseBranch != "master-next" {
+					log.Info("Skipping build for meta-mender:master-next")
+					continue
+				}
 				err = triggerBuild(conf, &build, pr)
 				if err != nil {
 					log.Errorf("Could not start build: %s", err.Error())
@@ -289,7 +293,7 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 	log.Info("Pull request event with action: ", action)
 	var builds []buildOptions
 
-	// github pull request events to trigger a jenkins job for
+	// github pull request events to trigger a CI job for
 	if action == "opened" || action == "edited" || action == "reopened" ||
 		action == "synchronize" || action == "ready_for_review" {
 
@@ -1010,7 +1014,7 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 		// iterate over all the repositories (except the one we are testing) and
 		// set the correct microservice versions
 
-		// use the default "master" for both mender-qa, and meta-mender (set in Jenkins)
+		// use the default "master" for both mender-qa, and meta-mender (set in CI)
 		if versionedRepo != build.repo &&
 			versionedRepo != "integration" &&
 			build.repo != "meta-mender" {
@@ -1024,7 +1028,7 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 		}
 	}
 
-	// set the correct integraton branches if we aren't performing a pull request again integration
+	// set the correct integration branches if we aren't performing a pull request against integration
 	if build.repo != "integration" && build.repo != "meta-mender" {
 		buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: repoToBuildParameter("integration"), Value: build.baseBranch})
 	}
@@ -1037,8 +1041,7 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 		buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: repoToBuildParameter("meta-raspberrypi"), Value: build.baseBranch})
 	}
 
-	// set the rest of the jenkins build parameters
-	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "BASE_BRANCH", Value: build.baseBranch})
+	// set the rest of the CI build parameters
 	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "RUN_INTEGRATION_TESTS", Value: "true"})
 	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: repoToBuildParameter(build.repo), Value: readHead})
 
