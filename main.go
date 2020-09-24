@@ -113,8 +113,8 @@ func getConfig() (*config, error) {
 		}
 	}
 
+	// List of repos for which the integration pipeline shall be run
 	// if no env. variable is set, this is the default repo watch list
-	// This list must be kept in sync with: release_tool.py --list git
 	defaultWatchRepositories :=
 		[]string{
 			"create-artifact-worker",
@@ -127,7 +127,6 @@ func getConfig() (*config, error) {
 			"integration",
 			"mender",
 			"mender-artifact",
-			"mender-cli",
 			"mender-conductor",
 			"mender-conductor-enterprise",
 			"meta-mender",
