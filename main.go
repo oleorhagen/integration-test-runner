@@ -256,7 +256,7 @@ func main() {
 
 			for idx, build := range builds {
 				log.Infof("%d: "+spew.Sdump(build)+"\n", idx+1)
-				if build.repo == "meta-mender" && build.baseBranch != "master-next" {
+				if build.repo == "meta-mender" && build.baseBranch == "master-next" {
 					log.Info("Skipping build for meta-mender:master-next")
 					continue
 				}
