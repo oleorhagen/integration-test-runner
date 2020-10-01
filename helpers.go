@@ -16,6 +16,9 @@ func getServiceRevisionFromIntegration(repo, baseBranch string, conf *config) (s
 	c := exec.Command("release_tool.py", "--version-of", repo, "--in-integration-version", baseBranch)
 	c.Dir = conf.integrationDirectory + "/extra/"
 	version, err := c.Output()
+	if err != nil {
+		err = fmt.Errorf("getServiceRevisionFromIntegration: Error: %v (%s)", err, version)
+	}
 	return strings.TrimSpace(string(version)), err
 }
 
@@ -48,7 +51,7 @@ func getIntegrationVersionsUsingMicroservice(repo, version string, conf *config)
 	integrations, err := c.Output()
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("getIntegrationVersionsUsingMicroservice: Error: %v (%s)", err, integrations)
 	}
 
 	branches := strings.Split(strings.TrimSpace(string(integrations)), "\n")
@@ -68,7 +71,7 @@ func getListOfVersionedRepositories(inVersion string) ([]string, error) {
 	c := exec.Command("release_tool.py", "--list", "--in-integration-version", inVersion)
 	output, err := c.Output()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("getListOfVersionedRepositories: Error: %v (%s)", err, output)
 	}
 
 	return strings.Split(strings.TrimSpace(string(output)), "\n"), nil
