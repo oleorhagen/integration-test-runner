@@ -228,8 +228,8 @@ func main() {
 
 			// First check if the PR has been merged. If so, stop
 			// the pipeline, and do nothing else.
-			if err = stopBuildsOfMergedPRs(pr, conf); err != nil {
-				log.Errorf("Failed to stop a stale build after the PR: %v was merged. Error: %v", pr, err)
+			if err = stopBuildsOfStalePRs(pr, conf); err != nil {
+				log.Errorf("Failed to stop a stale build after the PR: %v was merged or closed. Error: %v", pr, err)
 			}
 
 			// To run component's Pipeline create a branch in GitLab, regardless of the PR
@@ -1073,31 +1073,30 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 	return buildParameters, nil
 }
 
-// stopBuildsOfMergedPRs stops any running pipelines on a PR which has been merged.
-func stopBuildsOfMergedPRs(pr *github.PullRequestEvent, conf *config) error {
+// stopBuildsOfStalePRs stops any running pipelines on a PR which has been merged.
+func stopBuildsOfStalePRs(pr *github.PullRequestEvent, conf *config) error {
 
-	// If the action is "closed" and the "merged" key is "true", the pull request was merged.
-	// While webhooks are also triggered when a pull request is synchronized, Events API timelines
-	// don't include pull request events with the "synchronize" action.
-	if !(pr.GetAction() == "closed" && pr.PullRequest.GetMerged()) {
-		log.Debugf("stopBuildsOfMergedPRs: PR not merged and closed")
+	// If the action is "closed" the pull request was merged or just closed,
+	// stop builds in both cases.
+	if pr.GetAction() != "closed" {
+		log.Debugf("stopBuildsOfStalePRs: PR not closed, therefore not stopping it's pipeline")
 		return nil
 	}
 
-	log.Debug("stopBuildsOfMergedPRs: Find any running pipelines and kill mercilessly!")
+	log.Debug("stopBuildsOfStalePRs: Find any running pipelines and kill mercilessly!")
 
 	for _, build := range getBuilds(conf, pr) {
 
 		gitlabClient := gitlab.NewClient(nil, conf.gitlabToken)
 		err := gitlabClient.SetBaseURL(conf.gitlabBaseURL)
 		if err != nil {
-			log.Debug("stopBuildsOfMergedPRs: Failed to set the BaseURL of the gitlabClient")
+			log.Debug("stopBuildsOfStalePRs: Failed to set the BaseURL of the gitlabClient")
 			return err
 		}
 
 		buildParams, err := getBuildParameters(conf, &build)
 		if err != nil {
-			log.Debug("stopBuildsOfMergedPRs: Failed to get the build-parameters for the build")
+			log.Debug("stopBuildsOfStalePRs: Failed to get the build-parameters for the build")
 			return err
 		}
 
