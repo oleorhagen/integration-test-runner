@@ -678,14 +678,14 @@ func syncIfOSHasEnterpriseRepo(conf *config, gpr *github.PullRequestEvent) error
 	// don't include pull request events with the "synchronize" action.
 	if gpr.GetAction() == "closed" && pr.GetMerged() {
 
-		// Only sync on Merges to master or release branches and
-		// verify release branches.
+		// Only sync on Merges to master, release and feature branches.
+		// Verify release branches.
 		branch := pr.GetBase()
 		if branch == nil {
 			return fmt.Errorf("syncIfOSHasEnterpriseRepo: Failed to get the base-branch of the PR: %v", branch)
 		}
 
-		syncBranches := regexp.MustCompile(`(master|[0-9]+\.[0-9]+\.x)`)
+		syncBranches := regexp.MustCompile(`(master|[0-9]+\.[0-9]+\.x|` + featureBranchPrefix + `.+)`)
 		branchRef := branch.GetRef()
 		if branchRef == "" {
 			return fmt.Errorf("Failed to get the branch-ref from the PR: %v", pr)
