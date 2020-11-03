@@ -46,7 +46,11 @@ func repoToBuildParameter(repo string) string {
 
 // Use python script in order to determine which integration branches to test with
 func getIntegrationVersionsUsingMicroservice(repo, version string, conf *config) ([]string, error) {
-	c := exec.Command("release_tool.py", "--integration-versions-including", repo, "--version", version)
+	cmdArgs := []string{"--integration-versions-including", repo, "--version", version}
+	if strings.HasPrefix(version, featureBranchPrefix) {
+		cmdArgs = append(cmdArgs, "--feature-branches")
+	}
+	c := exec.Command("release_tool.py", cmdArgs...)
 	c.Dir = conf.integrationDirectory + "/extra/"
 	integrations, err := c.Output()
 

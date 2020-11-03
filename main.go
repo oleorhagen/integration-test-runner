@@ -78,6 +78,10 @@ const (
 	GIT_OPERATION_TIMEOUT = 30
 )
 
+const (
+	featureBranchPrefix = "feature-"
+)
+
 func initLogger() {
 	// Log to stdout and with JSON format; suitable for GKE
 	formatter := &log.JSONFormatter{
