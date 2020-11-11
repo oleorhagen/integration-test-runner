@@ -74,6 +74,13 @@ var enterpriseRepositories = []string{
 	"mender-qa",
 }
 
+var qemuBuildRepositories = []string{
+	"meta-mender",
+	"mender",
+	"mender-artifact",
+	"mender-shell",
+}
+
 const (
 	GIT_OPERATION_TIMEOUT = 30
 )
@@ -142,6 +149,7 @@ func getConfig() (*config, error) {
 			"workflows-enterprise",
 			"auditlogs",
 			"mtls-ambassador",
+			"mender-shell",
 		}
 
 	watchRepositories := os.Getenv("WATCH_REPOS")
@@ -323,8 +331,12 @@ func getBuilds(conf *config, pr *github.PullRequestEvent) []buildOptions {
 		// one that we are watching.
 
 		if watchRepo == repo {
-			if repo == "mender" || repo == "meta-mender" || repo == "mender-artifact" {
-				makeQEMU = true
+
+			// check if we need to build/test yocto
+			for _, qemuRepo := range qemuBuildRepositories {
+				if repo == qemuRepo {
+					makeQEMU = true
+				}
 			}
 
 			// we need to have the latest integration/master branch in order to use the release_tool.py
