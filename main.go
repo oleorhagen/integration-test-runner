@@ -927,7 +927,6 @@ type commentArgs struct {
 	conf           *config
 	mergeConflicts bool
 	repo           string
-	repoOS         string
 	userName       string
 	prBranchName   string
 	branchName     string
@@ -950,7 +949,7 @@ This can be done by following:
     <summary><small>this</small> recipe</summary><p>
 
 1. Make sure that the 'mender-test-bot' remote is present in your repository, or else add it with:
-    1. {{.BackQuote}}git remote add mender-test-bot git@github.com:mender-test-bot/{{.Repo}}-enterprise.git{{.BackQuote}}
+    1. {{.BackQuote}}git remote add mender-test-bot git@github.com:mender-test-bot/{{.Repo}}.git{{.BackQuote}}
 
 2. Fetch the remote branches
     1. {{.BackQuote}}git fetch origin {{.BranchName}}:localtmp{{.BackQuote}}
@@ -984,7 +983,7 @@ This can be done by following:
 			BackQuote    string
 		}{
 			UserName:     args.userName,
-			Repo:         args.repoOS,
+			Repo:         args.repo,
 			PRBranchName: args.prBranchName,
 			BranchName:   args.branchName,
 			BackQuote:    "`",
