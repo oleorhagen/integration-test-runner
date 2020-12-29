@@ -78,7 +78,7 @@ var qemuBuildRepositories = []string{
 	"meta-mender",
 	"mender",
 	"mender-artifact",
-	"mender-shell",
+	"mender-connect",
 }
 
 const (
@@ -149,7 +149,7 @@ func getConfig() (*config, error) {
 			"workflows-enterprise",
 			"auditlogs",
 			"mtls-ambassador",
-			"mender-shell",
+			"mender-connect",
 		}
 
 	watchRepositories := os.Getenv("WATCH_REPOS")
