@@ -28,13 +28,13 @@ import (
 var mutex = &sync.Mutex{}
 
 type config struct {
-	githubSecret               []byte
-	githubToken                string
-	gitlabToken                string
-	gitlabBaseURL              string
-	watchRepositories          []string
-	integrationBranchDependant []string
-	integrationDirectory       string
+	githubSecret                     []byte
+	githubToken                      string
+	gitlabToken                      string
+	gitlabBaseURL                    string
+	integrationDirectory             string
+	watchRepositoriesTriggerPipeline []string // List of repositories for which to trigger mender-qa pipeline
+	watchRepositoriesGitLabSync      []string // List of repositories for which to trigger GitHub->Gitlab branches sync
 }
 
 type buildOptions struct {
@@ -45,11 +45,40 @@ type buildOptions struct {
 	makeQEMU   bool
 }
 
+// List of repos for which the integration pipeline shall be run
+// It can be overridden with env. variable WATCH_REPOS_PIPELINE
+var defaultWatchRepositoriesPipeline = []string{
+	"create-artifact-worker",
+	"deployments",
+	"deployments-enterprise",
+	"deviceadm",
+	"deviceauth",
+	"inventory",
+	"inventory-enterprise",
+	"integration",
+	"mender",
+	"mender-artifact",
+	"mender-conductor",
+	"mender-conductor-enterprise",
+	"meta-mender",
+	"mender-api-gateway-docker",
+	"tenantadm",
+	"useradm",
+	"useradm-enterprise",
+	"workflows",
+	"workflows-enterprise",
+	"auditlogs",
+	"mtls-ambassador",
+	"mender-connect",
+}
+
 var githubRepoToGitLabProject = map[string]string{
 	"saas": "Northern.tech/MenderSaaS/saas",
 }
 
-var enterpriseRepositories = []string{
+// List of repos for which the GitHub->Gitlab sync shall be performed.
+// It can be overridden with env. variable WATCH_REPOS_SYNC
+var defaultWatchRepositoriesSync = []string{
 	// backend
 	"deployments-enterprise",
 	"inventory-enterprise",
@@ -104,7 +133,8 @@ func initLogger() {
 }
 
 func getConfig() (*config, error) {
-	var repositoryWatchList []string
+	var repositoryWatchListPipeline []string
+	var repositoryWatchListSync []string
 	githubSecret := os.Getenv("GITHUB_SECRET")
 	githubToken := os.Getenv("GITHUB_TOKEN")
 	gitlabToken := os.Getenv("GITLAB_TOKEN")
@@ -124,40 +154,20 @@ func getConfig() (*config, error) {
 		}
 	}
 
-	// List of repos for which the integration pipeline shall be run
-	// if no env. variable is set, this is the default repo watch list
-	defaultWatchRepositories :=
-		[]string{
-			"create-artifact-worker",
-			"deployments",
-			"deployments-enterprise",
-			"deviceadm",
-			"deviceauth",
-			"inventory",
-			"inventory-enterprise",
-			"integration",
-			"mender",
-			"mender-artifact",
-			"mender-conductor",
-			"mender-conductor-enterprise",
-			"meta-mender",
-			"mender-api-gateway-docker",
-			"tenantadm",
-			"useradm",
-			"useradm-enterprise",
-			"workflows",
-			"workflows-enterprise",
-			"auditlogs",
-			"mtls-ambassador",
-			"mender-connect",
-		}
+	watchRepositoriesTriggerPipeline := os.Getenv("WATCH_REPOS_PIPELINE")
 
-	watchRepositories := os.Getenv("WATCH_REPOS")
-
-	if len(watchRepositories) == 0 {
-		repositoryWatchList = defaultWatchRepositories
+	if watchRepositoriesTriggerPipeline == "" {
+		repositoryWatchListPipeline = defaultWatchRepositoriesPipeline
 	} else {
-		repositoryWatchList = strings.Split(watchRepositories, ",")
+		repositoryWatchListPipeline = strings.Split(watchRepositoriesTriggerPipeline, ",")
+	}
+
+	watchRepositoriesGitLabSync := os.Getenv("WATCH_REPOS_SYNC")
+
+	if watchRepositoriesGitLabSync == "" {
+		repositoryWatchListSync = defaultWatchRepositoriesSync
+	} else {
+		repositoryWatchListSync = strings.Split(watchRepositoriesGitLabSync, ",")
 	}
 
 	switch {
@@ -174,12 +184,13 @@ func getConfig() (*config, error) {
 	}
 
 	return &config{
-		githubSecret:         []byte(githubSecret),
-		githubToken:          githubToken,
-		gitlabToken:          gitlabToken,
-		gitlabBaseURL:        gitlabBaseURL,
-		watchRepositories:    repositoryWatchList,
-		integrationDirectory: integrationDirectory,
+		githubSecret:                     []byte(githubSecret),
+		githubToken:                      githubToken,
+		gitlabToken:                      gitlabToken,
+		gitlabBaseURL:                    gitlabBaseURL,
+		integrationDirectory:             integrationDirectory,
+		watchRepositoriesTriggerPipeline: repositoryWatchListPipeline,
+		watchRepositoriesGitLabSync:      repositoryWatchListSync,
 	}, nil
 }
 
@@ -282,7 +293,7 @@ func main() {
 			repoName := push.GetRepo().GetName()
 			refName := push.GetRef()
 			log.Debugf("Got push event :: repo %s :: ref %s", repoName, refName)
-			for _, repo := range enterpriseRepositories {
+			for _, repo := range conf.watchRepositoriesGitLabSync {
 				if repoName == repo {
 					err = syncRemoteRef(repoName, refName)
 					if err != nil {
@@ -326,7 +337,7 @@ func getBuilds(conf *config, pr *github.PullRequestEvent) []buildOptions {
 
 	makeQEMU := false
 
-	for _, watchRepo := range conf.watchRepositories {
+	for _, watchRepo := range conf.watchRepositoriesTriggerPipeline {
 		// make sure the repo that the pull request is performed against is
 		// one that we are watching.
 
