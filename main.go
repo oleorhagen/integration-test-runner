@@ -28,13 +28,13 @@ import (
 var mutex = &sync.Mutex{}
 
 type config struct {
-	githubSecret               []byte
-	githubToken                string
-	gitlabToken                string
-	gitlabBaseURL              string
-	watchRepositories          []string
-	integrationBranchDependant []string
-	integrationDirectory       string
+	githubSecret                     []byte
+	githubToken                      string
+	gitlabToken                      string
+	gitlabBaseURL                    string
+	integrationDirectory             string
+	watchRepositoriesTriggerPipeline []string // List of repositories for which to trigger mender-qa pipeline
+	watchRepositoriesGitLabSync      []string // List of repositories for which to trigger GitHub->Gitlab branches sync
 }
 
 type buildOptions struct {
@@ -45,11 +45,47 @@ type buildOptions struct {
 	makeQEMU   bool
 }
 
-var githubRepoToGitLabProject = map[string]string{
+// List of repos for which the integration pipeline shall be run
+// It can be overridden with env. variable WATCH_REPOS_PIPELINE
+var defaultWatchRepositoriesPipeline = []string{
+	"create-artifact-worker",
+	"deployments",
+	"deployments-enterprise",
+	"deviceadm",
+	"deviceauth",
+	"inventory",
+	"inventory-enterprise",
+	"integration",
+	"mender",
+	"mender-artifact",
+	"mender-conductor",
+	"mender-conductor-enterprise",
+	"meta-mender",
+	"mender-api-gateway-docker",
+	"tenantadm",
+	"useradm",
+	"useradm-enterprise",
+	"workflows",
+	"workflows-enterprise",
+	"auditlogs",
+	"mtls-ambassador",
+	"mender-connect",
+}
+
+// Mapping https://github.com/<org> -> https://gitlab.com/Northern.tech/<group>
+var gitHubOrganizationToGitLabGroup = map[string]string{
+	"mendersoftware": "Mender",
+	"cfengine":       "CFEngine",
+}
+
+// Mapping of special repos that have a custom group/project
+var gitHubRepoToGitLabProjectCustom = map[string]string{
 	"saas": "Northern.tech/MenderSaaS/saas",
 }
 
-var enterpriseRepositories = []string{
+// List of repos for which the GitHub->Gitlab sync shall be performed.
+// It can be overridden with env. variable WATCH_REPOS_SYNC
+var defaultWatchRepositoriesSync = []string{
 	// backend
 	"deployments-enterprise",
 	"inventory-enterprise",
@@ -104,7 +140,8 @@ func initLogger() {
 }
 
 func getConfig() (*config, error) {
-	var repositoryWatchList []string
+	var repositoryWatchListPipeline []string
+	var repositoryWatchListSync []string
 	githubSecret := os.Getenv("GITHUB_SECRET")
 	githubToken := os.Getenv("GITHUB_TOKEN")
 	gitlabToken := os.Getenv("GITLAB_TOKEN")
@@ -124,40 +161,20 @@ func getConfig() (*config, error) {
 		}
 	}
 
-	// List of repos for which the integration pipeline shall be run
-	// if no env. variable is set, this is the default repo watch list
-	defaultWatchRepositories :=
-		[]string{
-			"create-artifact-worker",
-			"deployments",
-			"deployments-enterprise",
-			"deviceadm",
-			"deviceauth",
-			"inventory",
-			"inventory-enterprise",
-			"integration",
-			"mender",
-			"mender-artifact",
-			"mender-conductor",
-			"mender-conductor-enterprise",
-			"meta-mender",
-			"mender-api-gateway-docker",
-			"tenantadm",
-			"useradm",
-			"useradm-enterprise",
-			"workflows",
-			"workflows-enterprise",
-			"auditlogs",
-			"mtls-ambassador",
-			"mender-connect",
-		}
+	watchRepositoriesTriggerPipeline := os.Getenv("WATCH_REPOS_PIPELINE")
 
-	watchRepositories := os.Getenv("WATCH_REPOS")
-
-	if len(watchRepositories) == 0 {
-		repositoryWatchList = defaultWatchRepositories
+	if watchRepositoriesTriggerPipeline == "" {
+		repositoryWatchListPipeline = defaultWatchRepositoriesPipeline
 	} else {
-		repositoryWatchList = strings.Split(watchRepositories, ",")
+		repositoryWatchListPipeline = strings.Split(watchRepositoriesTriggerPipeline, ",")
+	}
+
+	watchRepositoriesGitLabSync := os.Getenv("WATCH_REPOS_SYNC")
+
+	if watchRepositoriesGitLabSync == "" {
+		repositoryWatchListSync = defaultWatchRepositoriesSync
+	} else {
+		repositoryWatchListSync = strings.Split(watchRepositoriesGitLabSync, ",")
 	}
 
 	switch {
@@ -174,12 +191,13 @@ func getConfig() (*config, error) {
 	}
 
 	return &config{
-		githubSecret:         []byte(githubSecret),
-		githubToken:          githubToken,
-		gitlabToken:          gitlabToken,
-		gitlabBaseURL:        gitlabBaseURL,
-		watchRepositories:    repositoryWatchList,
-		integrationDirectory: integrationDirectory,
+		githubSecret:                     []byte(githubSecret),
+		githubToken:                      githubToken,
+		gitlabToken:                      gitlabToken,
+		gitlabBaseURL:                    gitlabBaseURL,
+		integrationDirectory:             integrationDirectory,
+		watchRepositoriesTriggerPipeline: repositoryWatchListPipeline,
+		watchRepositoriesGitLabSync:      repositoryWatchListSync,
 	}, nil
 }
 
@@ -246,7 +264,7 @@ func main() {
 
 			// To run component's Pipeline create a branch in GitLab, regardless of the PR
 			// coming from a mendersoftware member or not (equivalent to the old Travis tests)
-			err := createPullRequestBranch(*pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action)
+			err := createPullRequestBranch(*pr.Repo.Organization.Name, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action)
 			if err != nil {
 				log.Errorf("Could not create PR branch: %s", err.Error())
 			}
@@ -280,11 +298,12 @@ func main() {
 		} else if github.WebHookType(context.Request) == "push" {
 			push := event.(*github.PushEvent)
 			repoName := push.GetRepo().GetName()
+			repoOrg := push.GetRepo().GetOrganization()
 			refName := push.GetRef()
 			log.Debugf("Got push event :: repo %s :: ref %s", repoName, refName)
-			for _, repo := range enterpriseRepositories {
+			for _, repo := range conf.watchRepositoriesGitLabSync {
 				if repoName == repo {
-					err = syncRemoteRef(repoName, refName)
+					err = syncRemoteRef(repoOrg, repoName, refName)
 					if err != nil {
 						log.Errorf("Could not sync branch: %s", err.Error())
 					}
@@ -326,7 +345,7 @@ func getBuilds(conf *config, pr *github.PullRequestEvent) []buildOptions {
 
 	makeQEMU := false
 
-	for _, watchRepo := range conf.watchRepositories {
+	for _, watchRepo := range conf.watchRepositoriesTriggerPipeline {
 		// make sure the repo that the pull request is performed against is
 		// one that we are watching.
 
@@ -462,7 +481,22 @@ Hello :smile_cat: I created a pipeline for you here: [Pipeline-{{.Pipeline.ID}}]
 	return err
 }
 
-func createPullRequestBranch(repo, pr, action string) error {
+func getRemoteURLGitLab(org, repo string) (string, error) {
+	// By default, the GitLab project is Northern.tech/<group>/<repo>
+	group, ok := gitHubOrganizationToGitLabGroup[org]
+	if !ok {
+		return "", fmt.Errorf("Unrecognized organization %s", org)
+	}
+	remoteURL := "git@gitlab.com:Northern.tech/" + group + "/" + repo
+
+	// Override for some specific repos have custom GitLab group/project
+	if v, ok := gitHubRepoToGitLabProjectCustom[repo]; ok {
+		remoteURL = "git@gitlab.com:" + v
+	}
+	return remoteURL, nil
+}
+
+func createPullRequestBranch(org, repo, pr, action string) error {
 
 	if action != "opened" && action != "edited" && action != "reopened" &&
 		action != "synchronize" && action != "ready_for_review" {
@@ -490,11 +524,11 @@ func createPullRequestBranch(repo, pr, action string) error {
 		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	// By default, assume the GitLab project is Northern.tech/Mender/<repo>
-	remoteURL := "git@gitlab.com:Northern.tech/Mender/" + repo
-	if v, ok := githubRepoToGitLabProject[repo]; ok {
-		remoteURL = "git@gitlab.com:" + v
+	remoteURL, err := getRemoteURLGitLab(org, repo)
+	if err != nil {
+		return fmt.Errorf("getRemoteURLGitLab returned error: %s", err.Error())
 	}
+
 	gitcmd = exec.Command("git", "remote", "add", "gitlab", remoteURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
@@ -522,7 +556,7 @@ func createPullRequestBranch(repo, pr, action string) error {
 	return nil
 }
 
-func syncRemoteRef(repo, ref string) error {
+func syncRemoteRef(org, repo, ref string) error {
 
 	tmpdir, err := ioutil.TempDir("", repo)
 	if err != nil {
@@ -537,18 +571,18 @@ func syncRemoteRef(repo, ref string) error {
 		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	gitcmd = exec.Command("git", "remote", "add", "github", "git@github.com:mendersoftware/"+repo)
+	gitcmd = exec.Command("git", "remote", "add", "github", "git@github.com:"+org+"/"+repo)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	// By default, assume the GitLab project is Northern.tech/Mender/<repo>
-	remoteURL := "git@gitlab.com:Northern.tech/Mender/" + repo
-	if v, ok := githubRepoToGitLabProject[repo]; ok {
-		remoteURL = "git@gitlab.com:" + v
+	remoteURL, err := getRemoteURLGitLab(org, repo)
+	if err != nil {
+		return fmt.Errorf("getRemoteURLGitLab returned error: %s", err.Error())
 	}
+
 	gitcmd = exec.Command("git", "remote", "add", "gitlab", remoteURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
