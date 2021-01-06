@@ -72,7 +72,14 @@ var defaultWatchRepositoriesPipeline = []string{
 	"mender-connect",
 }
 
-var githubRepoToGitLabProject = map[string]string{
+// Mapping https://github.com/<org> -> https://gitlab.com/Northern.tech/<group>
+var gitHubOrganizationToGitLabGroup = map[string]string{
+	"mendersoftware": "Mender",
+	"cfengine":       "CFEngine",
+}
+
+// Mapping of special repos that have a custom group/project
+var gitHubRepoToGitLabProjectCustom = map[string]string{
 	"saas": "Northern.tech/MenderSaaS/saas",
 }
 
@@ -257,7 +264,7 @@ func main() {
 
 			// To run component's Pipeline create a branch in GitLab, regardless of the PR
 			// coming from a mendersoftware member or not (equivalent to the old Travis tests)
-			err := createPullRequestBranch(*pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action)
+			err := createPullRequestBranch(*pr.Repo.Organization.Name, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action)
 			if err != nil {
 				log.Errorf("Could not create PR branch: %s", err.Error())
 			}
@@ -291,11 +298,12 @@ func main() {
 		} else if github.WebHookType(context.Request) == "push" {
 			push := event.(*github.PushEvent)
 			repoName := push.GetRepo().GetName()
+			repoOrg := push.GetRepo().GetOrganization()
 			refName := push.GetRef()
 			log.Debugf("Got push event :: repo %s :: ref %s", repoName, refName)
 			for _, repo := range conf.watchRepositoriesGitLabSync {
 				if repoName == repo {
-					err = syncRemoteRef(repoName, refName)
+					err = syncRemoteRef(repoOrg, repoName, refName)
 					if err != nil {
 						log.Errorf("Could not sync branch: %s", err.Error())
 					}
@@ -473,7 +481,22 @@ Hello :smile_cat: I created a pipeline for you here: [Pipeline-{{.Pipeline.ID}}]
 	return err
 }
 
-func createPullRequestBranch(repo, pr, action string) error {
+func getRemoteURLGitLab(org, repo string) (string, error) {
+	// By default, the GitLab project is Northern.tech/<group>/<repo>
+	group, ok := gitHubOrganizationToGitLabGroup[org]
+	if !ok {
+		return "", fmt.Errorf("Unrecognized organization %s", org)
+	}
+	remoteURL := "git@gitlab.com:Northern.tech/" + group + "/" + repo
+
+	// Override for some specific repos have custom GitLab group/project
+	if v, ok := gitHubRepoToGitLabProjectCustom[repo]; ok {
+		remoteURL = "git@gitlab.com:" + v
+	}
+	return remoteURL, nil
+}
+
+func createPullRequestBranch(org, repo, pr, action string) error {
 
 	if action != "opened" && action != "edited" && action != "reopened" &&
 		action != "synchronize" && action != "ready_for_review" {
@@ -501,11 +524,11 @@ func createPullRequestBranch(repo, pr, action string) error {
 		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	// By default, assume the GitLab project is Northern.tech/Mender/<repo>
-	remoteURL := "git@gitlab.com:Northern.tech/Mender/" + repo
-	if v, ok := githubRepoToGitLabProject[repo]; ok {
-		remoteURL = "git@gitlab.com:" + v
+	remoteURL, err := getRemoteURLGitLab(org, repo)
+	if err != nil {
+		return fmt.Errorf("getRemoteURLGitLab returned error: %s", err.Error())
 	}
+
 	gitcmd = exec.Command("git", "remote", "add", "gitlab", remoteURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
@@ -533,7 +556,7 @@ func createPullRequestBranch(repo, pr, action string) error {
 	return nil
 }
 
-func syncRemoteRef(repo, ref string) error {
+func syncRemoteRef(org, repo, ref string) error {
 
 	tmpdir, err := ioutil.TempDir("", repo)
 	if err != nil {
@@ -548,18 +571,18 @@ func syncRemoteRef(repo, ref string) error {
 		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	gitcmd = exec.Command("git", "remote", "add", "github", "git@github.com:mendersoftware/"+repo)
+	gitcmd = exec.Command("git", "remote", "add", "github", "git@github.com:"+org+"/"+repo)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	// By default, assume the GitLab project is Northern.tech/Mender/<repo>
-	remoteURL := "git@gitlab.com:Northern.tech/Mender/" + repo
-	if v, ok := githubRepoToGitLabProject[repo]; ok {
-		remoteURL = "git@gitlab.com:" + v
+	remoteURL, err := getRemoteURLGitLab(org, repo)
+	if err != nil {
+		return fmt.Errorf("getRemoteURLGitLab returned error: %s", err.Error())
 	}
+
 	gitcmd = exec.Command("git", "remote", "add", "gitlab", remoteURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
