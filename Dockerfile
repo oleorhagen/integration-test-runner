@@ -8,9 +8,7 @@ FROM golang:1.14-alpine3.11
 EXPOSE 8080
 RUN apk add git openssh python3 py3-pip
 RUN pip3 install --upgrade pyyaml
-RUN mkdir -p /root/.ssh/ && \
-    git config --global user.name "Mender Root" && \
-    git config --global user.email root@mender-jenkins.mender.io
+RUN mkdir -p /root/.ssh
 RUN git clone https://github.com/mendersoftware/integration.git /integration
 ENV INTEGRATION_DIRECTORY="/integration/"
 ENV PATH="/integration/extra:${PATH}"
