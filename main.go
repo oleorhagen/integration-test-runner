@@ -70,6 +70,7 @@ var defaultWatchRepositoriesPipeline = []string{
 	"auditlogs",
 	"mtls-ambassador",
 	"mender-connect",
+	"deviceconnect",
 }
 
 // Mapping https://github.com/<org> -> https://gitlab.com/Northern.tech/<group>
