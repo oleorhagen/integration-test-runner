@@ -264,7 +264,7 @@ func main() {
 
 			// To run component's Pipeline create a branch in GitLab, regardless of the PR
 			// coming from a mendersoftware member or not (equivalent to the old Travis tests)
-			err := createPullRequestBranch(*pr.Repo.Organization.Name, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action)
+			err := createPullRequestBranch(*pr.Organization.Login, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action)
 			if err != nil {
 				log.Errorf("Could not create PR branch: %s", err.Error())
 			}
