@@ -162,20 +162,20 @@ func getConfig() (*config, error) {
 		}
 	}
 
-	watchRepositoriesTriggerPipeline := os.Getenv("WATCH_REPOS_PIPELINE")
+	watchRepositoriesTriggerPipeline, ok := os.LookupEnv("WATCH_REPOS_PIPELINE")
 
-	if watchRepositoriesTriggerPipeline == "" {
-		repositoryWatchListPipeline = defaultWatchRepositoriesPipeline
-	} else {
+	if ok {
 		repositoryWatchListPipeline = strings.Split(watchRepositoriesTriggerPipeline, ",")
+	} else {
+		repositoryWatchListPipeline = defaultWatchRepositoriesPipeline
 	}
 
-	watchRepositoriesGitLabSync := os.Getenv("WATCH_REPOS_SYNC")
+	watchRepositoriesGitLabSync, ok := os.LookupEnv("WATCH_REPOS_SYNC")
 
-	if watchRepositoriesGitLabSync == "" {
-		repositoryWatchListSync = defaultWatchRepositoriesSync
-	} else {
+	if ok {
 		repositoryWatchListSync = strings.Split(watchRepositoriesGitLabSync, ",")
+	} else {
+		repositoryWatchListSync = defaultWatchRepositoriesSync
 	}
 
 	switch {
