@@ -258,19 +258,20 @@ func main() {
 			}
 
 			action := pr.GetAction()
-			builds := parsePullRequest(conf, action, pr)
-
-			// First check if the PR has been merged. If so, stop
-			// the pipeline, and do nothing else.
-			if err = stopBuildsOfStalePRs(pr, conf); err != nil {
-				log.Errorf("Failed to stop a stale build after the PR: %v was merged or closed. Error: %v", pr, err)
-			}
 
 			// To run component's Pipeline create a branch in GitLab, regardless of the PR
 			// coming from a mendersoftware member or not (equivalent to the old Travis tests)
 			err = createPullRequestBranch(*pr.Organization.Login, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action)
 			if err != nil {
 				log.Errorf("Could not create PR branch: %s", err.Error())
+			}
+
+			builds := parsePullRequest(conf, action, pr)
+
+			// First check if the PR has been merged. If so, stop
+			// the pipeline, and do nothing else.
+			if err = stopBuildsOfStalePRs(pr, conf); err != nil {
+				log.Errorf("Failed to stop a stale build after the PR: %v was merged or closed. Error: %v", pr, err)
 			}
 
 			// Then, continue to the integration Pipeline only for mendersoftware members
@@ -483,81 +484,6 @@ Hello :smile_cat: I created a pipeline for you here: [Pipeline-{{.Pipeline.ID}}]
 	}
 
 	return err
-}
-
-func getRemoteURLGitLab(org, repo string) (string, error) {
-	// By default, the GitLab project is Northern.tech/<group>/<repo>
-	group, ok := gitHubOrganizationToGitLabGroup[org]
-	if !ok {
-		return "", fmt.Errorf("Unrecognized organization %s", org)
-	}
-	remoteURL := "git@gitlab.com:Northern.tech/" + group + "/" + repo
-
-	// Override for some specific repos have custom GitLab group/project
-	if v, ok := gitHubRepoToGitLabProjectCustom[repo]; ok {
-		remoteURL = "git@gitlab.com:" + v
-	}
-	return remoteURL, nil
-}
-
-func createPullRequestBranch(org, repo, pr, action string) error {
-
-	if action != "opened" && action != "edited" && action != "reopened" &&
-		action != "synchronize" && action != "ready_for_review" {
-		log.Infof("Action %s, ignoring", action)
-		return nil
-	}
-
-	tmpdir, err := ioutil.TempDir("", repo)
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmpdir)
-
-	gitcmd := exec.Command("git", "init", ".")
-	gitcmd.Dir = tmpdir
-	out, err := gitcmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	gitcmd = exec.Command("git", "remote", "add", "github", "git@github.com:mendersoftware/"+repo)
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	remoteURL, err := getRemoteURLGitLab(org, repo)
-	if err != nil {
-		return fmt.Errorf("getRemoteURLGitLab returned error: %s", err.Error())
-	}
-
-	gitcmd = exec.Command("git", "remote", "add", "gitlab", remoteURL)
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	prBranchName := "pr_" + pr
-	gitcmd = exec.Command("git", "fetch", "github", "pull/"+pr+"/head:"+prBranchName)
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	gitcmd = exec.Command("git", "push", "-f", "--set-upstream", "gitlab", prBranchName)
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	log.Infof("Created branch: %s:%s", repo, prBranchName)
-	log.Info("Pipeline is expected to start automatically")
-	return nil
 }
 
 func syncRemoteRef(org, repo, ref string) error {
