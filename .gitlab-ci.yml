@@ -5,7 +5,7 @@ stages:
   - test
   - build
   - publish
-  - trigger
+  - sync
 
 include:
   - project: 'Northern.tech/Mender/mendertesting'
@@ -14,39 +14,9 @@ include:
     file: '.gitlab-ci-check-docker-build.yml'
   - project: 'Northern.tech/Mender/mendertesting'
     file: '.gitlab-ci-github-status-updates.yml'
+  - project: 'Northern.tech/Mender/mendertesting'
+    file: '.gitlab-ci-check-docker-deploy.yml'
 
-# Function ported from template gitlab-ci-check-docker-build
-.export_docker_vars: &export_docker_vars |
-  export DOCKER_BUILD_TAG=${CI_COMMIT_REF_SLUG:-local}
-  export DOCKER_BUILD_SERVICE_IMAGE=${DOCKER_REPOSITORY}:${DOCKER_BUILD_TAG}
-  export DOCKER_PUBLISH_TAG=${CI_COMMIT_REF_NAME}
-  export DOCKER_PUBLISH_COMMIT_TAG=${CI_COMMIT_REF_NAME}_${CI_COMMIT_SHA}
-
-deploy:production:
-  stage: trigger
-  only:
-    refs:
-      - master
-  image: debian:buster
-  before_script:
-    - *export_docker_vars
-  script:
-    # Install kubectl
-    - apt update && apt install -yyq curl
-    - curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.18.0/bin/linux/amd64/kubectl
-    - chmod +x ./kubectl
-    - mv ./kubectl /usr/local/bin/kubectl
-    # Install Google Cloud SDK
-    - apt-get update
-    - apt-get install -yq apt-transport-https ca-certificates gnupg
-    - echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
-    - curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
-    - apt-get update
-    - apt-get install -yq google-cloud-sdk
-    # Configure Google Cloud SDK
-    - echo $GCLOUD_SERVICE_KEY | base64 -d > ${HOME}/gcloud-service-key.json
-    - gcloud auth activate-service-account --key-file ${HOME}/gcloud-service-key.json
-    - gcloud config set core/disable_usage_reporting true
-    - gcloud container clusters get-credentials company-websites --region us-east1 --project gp-kubernetes-269000
-    # Update image in the deployment
-    - kubectl -n default set image deployment/test-runner-mender-io test-runner-mender-io=$DOCKER_REPOSITORY:$DOCKER_PUBLISH_COMMIT_TAG
+sync:image:
+  variables:
+    TARGET_MANIFEST_FILE: "kubernetes/mender-test-runner/test-runner-deployment.yaml"
