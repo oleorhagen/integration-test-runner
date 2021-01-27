@@ -246,15 +246,18 @@ func main() {
 				return
 			}
 
-			action := pr.GetAction()
-
 			// make sure we only parse one pr at a time, since we use git
 			mutex.Lock()
 
-			if err = maybeVendorDependabotPR(pr); err != nil {
-				log.Errorf("maybeVendorDependabotPR: %v", err)
+			isDependabotPR, err := maybeVendorDependabotPR(pr)
+			if isDependabotPR {
+				if err != nil {
+					log.Errorf("maybeVendorDependabotPR: %v", err)
+				}
+				return
 			}
 
+			action := pr.GetAction()
 			builds := parsePullRequest(conf, action, pr)
 
 			// First check if the PR has been merged. If so, stop
@@ -265,7 +268,7 @@ func main() {
 
 			// To run component's Pipeline create a branch in GitLab, regardless of the PR
 			// coming from a mendersoftware member or not (equivalent to the old Travis tests)
-			err := createPullRequestBranch(*pr.Organization.Login, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action)
+			err = createPullRequestBranch(*pr.Organization.Login, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action)
 			if err != nil {
 				log.Errorf("Could not create PR branch: %s", err.Error())
 			}
