@@ -131,6 +131,13 @@ func initLogger() {
 	log.SetFormatter(formatter)
 }
 
+func setDeliveryIDLogger(deliveryID string) {
+	log.WithFields(
+		log.Fields{
+			"delivery": deliveryID,
+		})
+}
+
 func getConfig() (*config, error) {
 	var repositoryWatchListPipeline []string
 	var repositoryWatchListSync []string
@@ -221,11 +228,13 @@ func main() {
 	// webhook for GitHub
 	r.POST("/", func(context *gin.Context) {
 		payload, err := github.ValidatePayload(context.Request, conf.githubSecret)
-
 		if err != nil {
 			log.Warnln("payload failed to validate, ignoring.")
 			return
 		}
+
+		// Set unique ID for the logger
+		setDeliveryIDLogger(github.DeliveryID(context.Request))
 
 		event, _ := github.ParseWebHook(github.WebHookType(context.Request), payload)
 		if github.WebHookType(context.Request) == "pull_request" {
