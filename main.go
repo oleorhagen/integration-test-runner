@@ -210,6 +210,90 @@ func createGitHubClient(conf *config) *github.Client {
 	return github.NewClient(tc)
 }
 
+func processGitHubWebhook(context *gin.Context, payload []byte, githubClient *github.Client, conf *config) {
+
+	webhookType := github.WebHookType(context.Request)
+	webhookEvent, _ := github.ParseWebHook(github.WebHookType(context.Request), payload)
+
+	if webhookType == "pull_request" {
+		pr := webhookEvent.(*github.PullRequestEvent)
+
+		// Do not run if the PR is a draft
+		if pr.GetPullRequest().GetDraft() {
+			log.Infof("The PR: %s/%d is a draft. Do not run tests", pr.GetRepo().GetName(), pr.GetNumber())
+			return
+		}
+
+		isDependabotPR, err := maybeVendorDependabotPR(pr)
+		if isDependabotPR {
+			if err != nil {
+				log.Errorf("maybeVendorDependabotPR: %v", err)
+			}
+			return
+		}
+
+		action := pr.GetAction()
+
+		// To run component's Pipeline create a branch in GitLab, regardless of the PR
+		// coming from a mendersoftware member or not (equivalent to the old Travis tests)
+		err = createPullRequestBranch(*pr.Organization.Login, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action)
+		if err != nil {
+			log.Errorf("Could not create PR branch: %s", err.Error())
+		}
+
+		// Continue to the integration Pipeline only for mendersoftware members
+		if member, _, _ := githubClient.Organizations.IsMember(context, "mendersoftware", pr.Sender.GetLogin()); !member {
+			log.Warnf("%s is making a pullrequest, but he/she is not a member of mendersoftware, ignoring", pr.Sender.GetLogin())
+			return
+		}
+
+		// make sure we only parse one pr at a time, since we use release_tool
+		mutex.Lock()
+
+		builds := parsePullRequest(conf, action, pr)
+		log.Infof("%s:%d triggered %d builds: \n", *pr.Repo.Name, pr.GetNumber(), len(builds))
+
+		// First check if the PR has been merged. If so, stop
+		// the pipeline, and do nothing else.
+		if err = stopBuildsOfStalePRs(pr, conf); err != nil {
+			log.Errorf("Failed to stop a stale build after the PR: %v was merged or closed. Error: %v", pr, err)
+		}
+
+		// Keep the OS and Enterprise repos in sync
+		if err = syncIfOSHasEnterpriseRepo(conf, pr); err != nil {
+			log.Errorf("Failed to sync the OS and Enterprise repos: %s", err.Error())
+		}
+		mutex.Unlock()
+
+		for idx, build := range builds {
+			log.Infof("%d: "+spew.Sdump(build)+"\n", idx+1)
+			if build.repo == "meta-mender" && build.baseBranch == "master-next" {
+				log.Info("Skipping build targeting meta-mender:master-next")
+				continue
+			}
+			err = triggerBuild(conf, &build, pr)
+			if err != nil {
+				log.Errorf("Could not start build: %s", err.Error())
+			}
+		}
+	} else if webhookType == "push" {
+		push := webhookEvent.(*github.PushEvent)
+		repoName := push.GetRepo().GetName()
+		repoOrg := push.GetRepo().GetOrganization()
+		refName := push.GetRef()
+		log.Debugf("Got push event :: repo %s :: ref %s", repoName, refName)
+		for _, repo := range conf.watchRepositoriesGitLabSync {
+			if repoName == repo {
+				err := syncRemoteRef(repoOrg, repoName, refName)
+				if err != nil {
+					log.Errorf("Could not sync branch: %s", err.Error())
+				}
+				break
+			}
+		}
+	}
+}
+
 func main() {
 
 	initLogger()
@@ -236,84 +320,8 @@ func main() {
 		// Set unique ID for the logger
 		setDeliveryIDLogger(github.DeliveryID(context.Request))
 
-		event, _ := github.ParseWebHook(github.WebHookType(context.Request), payload)
-		if github.WebHookType(context.Request) == "pull_request" {
-			pr := event.(*github.PullRequestEvent)
+		go processGitHubWebhook(context, payload, githubClient, conf)
 
-			// Do not run if the PR is a draft
-			if pr.GetPullRequest().GetDraft() {
-				log.Infof("The PR: %s/%d is a draft. Do not run tests", pr.GetRepo().GetName(), pr.GetNumber())
-				return
-			}
-
-			isDependabotPR, err := maybeVendorDependabotPR(pr)
-			if isDependabotPR {
-				if err != nil {
-					log.Errorf("maybeVendorDependabotPR: %v", err)
-				}
-				return
-			}
-
-			action := pr.GetAction()
-
-			// To run component's Pipeline create a branch in GitLab, regardless of the PR
-			// coming from a mendersoftware member or not (equivalent to the old Travis tests)
-			err = createPullRequestBranch(*pr.Organization.Login, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action)
-			if err != nil {
-				log.Errorf("Could not create PR branch: %s", err.Error())
-			}
-
-			// Continue to the integration Pipeline only for mendersoftware members
-			if member, _, _ := githubClient.Organizations.IsMember(context, "mendersoftware", pr.Sender.GetLogin()); !member {
-				log.Warnf("%s is making a pullrequest, but he/she is not a member of mendersoftware, ignoring", pr.Sender.GetLogin())
-				return
-			}
-
-			// make sure we only parse one pr at a time, since we use release_tool
-			mutex.Lock()
-
-			builds := parsePullRequest(conf, action, pr)
-			log.Infof("%s:%d triggered %d builds: \n", *pr.Repo.Name, pr.GetNumber(), len(builds))
-
-			// First check if the PR has been merged. If so, stop
-			// the pipeline, and do nothing else.
-			if err = stopBuildsOfStalePRs(pr, conf); err != nil {
-				log.Errorf("Failed to stop a stale build after the PR: %v was merged or closed. Error: %v", pr, err)
-			}
-
-			// Keep the OS and Enterprise repos in sync
-			if err = syncIfOSHasEnterpriseRepo(conf, pr); err != nil {
-				log.Errorf("Failed to sync the OS and Enterprise repos: %s", err.Error())
-			}
-			mutex.Unlock()
-
-			for idx, build := range builds {
-				log.Infof("%d: "+spew.Sdump(build)+"\n", idx+1)
-				if build.repo == "meta-mender" && build.baseBranch == "master-next" {
-					log.Info("Skipping build targeting meta-mender:master-next")
-					continue
-				}
-				err = triggerBuild(conf, &build, pr)
-				if err != nil {
-					log.Errorf("Could not start build: %s", err.Error())
-				}
-			}
-		} else if github.WebHookType(context.Request) == "push" {
-			push := event.(*github.PushEvent)
-			repoName := push.GetRepo().GetName()
-			repoOrg := push.GetRepo().GetOrganization()
-			refName := push.GetRef()
-			log.Debugf("Got push event :: repo %s :: ref %s", repoName, refName)
-			for _, repo := range conf.watchRepositoriesGitLabSync {
-				if repoName == repo {
-					err = syncRemoteRef(repoOrg, repoName, refName)
-					if err != nil {
-						log.Errorf("Could not sync branch: %s", err.Error())
-					}
-					break
-				}
-			}
-		}
 	})
 
 	// 200 replay for the loadbalancer
