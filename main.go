@@ -118,27 +118,6 @@ const (
 	featureBranchPrefix = "feature-"
 )
 
-func initLogger() {
-	// Log to stdout and with JSON format; suitable for GKE
-	formatter := &log.JSONFormatter{
-		FieldMap: log.FieldMap{
-			log.FieldKeyTime:  "time",
-			log.FieldKeyLevel: "level",
-			log.FieldKeyMsg:   "message",
-		},
-	}
-
-	log.SetOutput(os.Stdout)
-	log.SetFormatter(formatter)
-}
-
-func setDeliveryIDLogger(deliveryID string) {
-	log.WithFields(
-		log.Fields{
-			"delivery": deliveryID,
-		})
-}
-
 func getConfig() (*config, error) {
 	var repositoryWatchListPipeline []string
 	var repositoryWatchListSync []string
@@ -319,7 +298,7 @@ func main() {
 		}
 
 		// Set unique ID for the logger
-		setDeliveryIDLogger(github.DeliveryID(context.Request))
+		log.AddHook(newDeliveryFieldHook(github.DeliveryID(context.Request)))
 
 		go processGitHubWebhook(context, payload, githubClient, conf)
 
