@@ -15,14 +15,14 @@ import (
 
 	"github.com/google/go-github/v28/github"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 )
 
 // syncIfOSHasEnterpriseRepo detects whether a commit has been merged to
 // the Open Source edition of a repo, and then creates a PR-branch
 // in the Enterprise edition, which is then used in order to open
 // a PR to the Enterprise repo with the OS changes.
-func syncIfOSHasEnterpriseRepo(conf *config, gpr *github.PullRequestEvent) error {
+func syncIfOSHasEnterpriseRepo(log *logrus.Entry, conf *config, gpr *github.PullRequestEvent) error {
 
 	repo := gpr.GetRepo()
 	if repo == nil {
@@ -73,7 +73,7 @@ func syncIfOSHasEnterpriseRepo(conf *config, gpr *github.PullRequestEvent) error
 			PRNumber := strconv.Itoa(pr.GetNumber())
 			PRBranchName := "mergeostoent_" + PRNumber
 
-			merged, err := createPRBranchOnEnterprise(repo.GetName(), branchRef, PRNumber, PRBranchName)
+			merged, err := createPRBranchOnEnterprise(log, repo.GetName(), branchRef, PRNumber, PRBranchName)
 			if err != nil {
 				return fmt.Errorf("syncIfOSHasEnterpriseRepo: Failed to create the PR branch on the Enterprise repo due to error: %v", err)
 			}
@@ -102,7 +102,7 @@ func syncIfOSHasEnterpriseRepo(conf *config, gpr *github.PullRequestEvent) error
 			log.Debugf("userName: %s", userName)
 
 			if userName != "" {
-				err = commentToNotifyUser(commentArgs{
+				err = commentToNotifyUser(log, commentArgs{
 					pr:             enterprisePR,
 					conf:           conf,
 					mergeConflicts: !merged,
@@ -126,7 +126,7 @@ func syncIfOSHasEnterpriseRepo(conf *config, gpr *github.PullRequestEvent) error
 // createPRBranchOnEnterprise creates a new branch in the Enterprise repository
 // starting at the branch in which to sync, with the name 'PRBranchName'
 // and merges this with the OS equivalent of 'branchName'.
-func createPRBranchOnEnterprise(repo, branchName, PRNumber, PRBranchName string) (merged bool, err error) {
+func createPRBranchOnEnterprise(log *logrus.Entry, repo, branchName, PRNumber, PRBranchName string) (merged bool, err error) {
 
 	tmpdir, err := ioutil.TempDir("", repo)
 	if err != nil {
@@ -292,7 +292,7 @@ type commentArgs struct {
 	branchName     string
 }
 
-func commentToNotifyUser(args commentArgs) error {
+func commentToNotifyUser(log *logrus.Entry, args commentArgs) error {
 
 	// Post a comment, and @mention the user
 	var commentBody string

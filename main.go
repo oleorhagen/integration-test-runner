@@ -13,7 +13,7 @@ import (
 	"github.com/google/go-github/v28/github"
 	"golang.org/x/oauth2"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 )
 
 var mutex = &sync.Mutex{}
@@ -128,15 +128,15 @@ func getConfig() (*config, error) {
 	integrationDirectory := os.Getenv("INTEGRATION_DIRECTORY")
 	logLevel, found := os.LookupEnv("INTEGRATION_TEST_RUNNER_LOG_LEVEL")
 
-	log.SetLevel(log.InfoLevel)
+	logrus.SetLevel(logrus.InfoLevel)
 
 	if found {
-		lvl, err := log.ParseLevel(logLevel)
+		lvl, err := logrus.ParseLevel(logLevel)
 		if err != nil {
-			log.Infof("Failed to parse the 'INTEGRATION_TEST_RUNNER_LOG_LEVEL' variable, defaulting to 'InfoLevel'")
+			logrus.Infof("Failed to parse the 'INTEGRATION_TEST_RUNNER_LOG_LEVEL' variable, defaulting to 'InfoLevel'")
 		} else {
-			log.Infof("Set 'LogLevel' to %s", lvl)
-			log.SetLevel(lvl)
+			logrus.Infof("Set 'LogLevel' to %s", lvl)
+			logrus.SetLevel(lvl)
 		}
 	}
 
@@ -180,6 +180,28 @@ func getConfig() (*config, error) {
 	}, nil
 }
 
+func initLogger() {
+	// Log to stdout and with JSON format; suitable for GKE
+	formatter := &logrus.JSONFormatter{
+		FieldMap: logrus.FieldMap{
+			logrus.FieldKeyTime:  "time",
+			logrus.FieldKeyLevel: "level",
+			logrus.FieldKeyMsg:   "message",
+		},
+	}
+
+	logrus.SetOutput(os.Stdout)
+	logrus.SetFormatter(formatter)
+}
+
+func getCustomLoggerFromContext(ctx *gin.Context) *logrus.Entry {
+	deliveryID, ok := ctx.Get("delivery")
+	if !ok {
+		return nil
+	}
+	return logrus.WithField("delivery", deliveryID)
+}
+
 func createGitHubClient(conf *config) *github.Client {
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
@@ -195,6 +217,8 @@ func processGitHubWebhook(context *gin.Context, payload []byte, githubClient *gi
 	webhookType := github.WebHookType(context.Request)
 	webhookEvent, _ := github.ParseWebHook(github.WebHookType(context.Request), payload)
 
+	log := getCustomLoggerFromContext(context)
+
 	if webhookType == "pull_request" {
 		pr := webhookEvent.(*github.PullRequestEvent)
 
@@ -204,7 +228,7 @@ func processGitHubWebhook(context *gin.Context, payload []byte, githubClient *gi
 			return
 		}
 
-		isDependabotPR, err := maybeVendorDependabotPR(pr)
+		isDependabotPR, err := maybeVendorDependabotPR(log, pr)
 		if isDependabotPR {
 			if err != nil {
 				log.Errorf("maybeVendorDependabotPR: %v", err)
@@ -216,7 +240,7 @@ func processGitHubWebhook(context *gin.Context, payload []byte, githubClient *gi
 
 		// To run component's Pipeline create a branch in GitLab, regardless of the PR
 		// coming from a mendersoftware member or not (equivalent to the old Travis tests)
-		err = createPullRequestBranch(*pr.Organization.Login, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action)
+		err = createPullRequestBranch(log, *pr.Organization.Login, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action)
 		if err != nil {
 			log.Errorf("Could not create PR branch: %s", err.Error())
 		}
@@ -230,17 +254,17 @@ func processGitHubWebhook(context *gin.Context, payload []byte, githubClient *gi
 		// make sure we only parse one pr at a time, since we use release_tool
 		mutex.Lock()
 
-		builds := parsePullRequest(conf, action, pr)
+		builds := parsePullRequest(log, conf, action, pr)
 		log.Infof("%s:%d triggered %d builds: \n", *pr.Repo.Name, pr.GetNumber(), len(builds))
 
 		// First check if the PR has been merged. If so, stop
 		// the pipeline, and do nothing else.
-		if err = stopBuildsOfStalePRs(pr, conf); err != nil {
+		if err = stopBuildsOfStalePRs(log, pr, conf); err != nil {
 			log.Errorf("Failed to stop a stale build after the PR: %v was merged or closed. Error: %v", pr, err)
 		}
 
 		// Keep the OS and Enterprise repos in sync
-		if err = syncIfOSHasEnterpriseRepo(conf, pr); err != nil {
+		if err = syncIfOSHasEnterpriseRepo(log, conf, pr); err != nil {
 			log.Errorf("Failed to sync the OS and Enterprise repos: %s", err.Error())
 		}
 		mutex.Unlock()
@@ -251,7 +275,7 @@ func processGitHubWebhook(context *gin.Context, payload []byte, githubClient *gi
 				log.Info("Skipping build targeting meta-mender:master-next")
 				continue
 			}
-			err = triggerBuild(conf, &build, pr)
+			err = triggerBuild(log, conf, &build, pr)
 			if err != nil {
 				log.Errorf("Could not start build: %s", err.Error())
 			}
@@ -264,7 +288,7 @@ func processGitHubWebhook(context *gin.Context, payload []byte, githubClient *gi
 		log.Debugf("Got push event :: repo %s :: ref %s", repoName, refName)
 		for _, repo := range conf.watchRepositoriesGitLabSync {
 			if repoName == repo {
-				err := syncRemoteRef(repoOrg, repoName, refName)
+				err := syncRemoteRef(log, repoOrg, repoName, refName)
 				if err != nil {
 					log.Errorf("Could not sync branch: %s", err.Error())
 				}
@@ -281,10 +305,10 @@ func main() {
 	conf, err := getConfig()
 
 	if err != nil {
-		log.Fatalf("failed to load config: %s", err.Error())
+		logrus.Fatalf("failed to load config: %s", err.Error())
 	}
 
-	log.Infoln("using settings: ", spew.Sdump(conf))
+	logrus.Infoln("using settings: ", spew.Sdump(conf))
 
 	githubClient := createGitHubClient(conf)
 	r := gin.Default()
@@ -293,12 +317,11 @@ func main() {
 	r.POST("/", func(context *gin.Context) {
 		payload, err := github.ValidatePayload(context.Request, conf.githubSecret)
 		if err != nil {
-			log.Warnln("payload failed to validate, ignoring.")
+			logrus.Warnln("payload failed to validate, ignoring.")
 			return
 		}
 
-		// Set unique ID for the logger
-		log.AddHook(newDeliveryFieldHook(github.DeliveryID(context.Request)))
+		context.Set("delivery", github.DeliveryID(context.Request))
 
 		go processGitHubWebhook(context, payload, githubClient, conf)
 

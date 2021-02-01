@@ -6,10 +6,10 @@ import (
 	"os"
 	"os/exec"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 )
 
-func createPullRequestBranch(org, repo, pr, action string) error {
+func createPullRequestBranch(log *logrus.Entry, org, repo, pr, action string) error {
 
 	if action != "opened" && action != "edited" && action != "reopened" &&
 		action != "synchronize" && action != "ready_for_review" {

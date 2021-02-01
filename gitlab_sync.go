@@ -7,10 +7,10 @@ import (
 	"os/exec"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 )
 
-func syncRemoteRef(org, repo, ref string) error {
+func syncRemoteRef(log *logrus.Entry, org, repo, ref string) error {
 
 	tmpdir, err := ioutil.TempDir("", repo)
 	if err != nil {
