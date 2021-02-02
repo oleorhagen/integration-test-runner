@@ -180,7 +180,7 @@ func getConfig() (*config, error) {
 	}, nil
 }
 
-func initLogger() {
+func init() {
 	// Log to stdout and with JSON format; suitable for GKE
 	formatter := &logrus.JSONFormatter{
 		FieldMap: logrus.FieldMap{
@@ -299,9 +299,6 @@ func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient *github
 }
 
 func main() {
-
-	initLogger()
-
 	conf, err := getConfig()
 
 	if err != nil {
