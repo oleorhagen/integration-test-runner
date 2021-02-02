@@ -12,10 +12,10 @@ import (
 	"github.com/google/go-github/v28/github"
 	"github.com/xanzy/go-gitlab"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 )
 
-func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) []buildOptions {
+func parsePullRequest(log *logrus.Entry, conf *config, action string, pr *github.PullRequestEvent) []buildOptions {
 	log.Info("Pull request event with action: ", action)
 	var builds []buildOptions
 
@@ -23,13 +23,13 @@ func parsePullRequest(conf *config, action string, pr *github.PullRequestEvent) 
 	if action == "opened" || action == "edited" || action == "reopened" ||
 		action == "synchronize" || action == "ready_for_review" {
 
-		return getBuilds(conf, pr)
+		return getBuilds(log, conf, pr)
 	}
 
 	return builds
 }
 
-func getBuilds(conf *config, pr *github.PullRequestEvent) []buildOptions {
+func getBuilds(log *logrus.Entry, conf *config, pr *github.PullRequestEvent) []buildOptions {
 
 	var builds []buildOptions
 
@@ -74,7 +74,7 @@ func getBuilds(conf *config, pr *github.PullRequestEvent) []buildOptions {
 				var err error
 				integrationsToTest := []string{}
 
-				if integrationsToTest, err = getIntegrationVersionsUsingMicroservice(repo, baseBranch, conf); err != nil {
+				if integrationsToTest, err = getIntegrationVersionsUsingMicroservice(log, repo, baseBranch, conf); err != nil {
 					log.Errorf("failed to get related microservices for repo: %s version: %s, failed with: %s\n", repo, baseBranch, err.Error())
 					return nil
 				}
@@ -98,20 +98,20 @@ func getBuilds(conf *config, pr *github.PullRequestEvent) []buildOptions {
 	return builds
 }
 
-func triggerBuild(conf *config, build *buildOptions, pr *github.PullRequestEvent) error {
+func triggerBuild(log *logrus.Entry, conf *config, build *buildOptions, pr *github.PullRequestEvent) error {
 	gitlabClient := gitlab.NewClient(nil, conf.gitlabToken)
 	err := gitlabClient.SetBaseURL(conf.gitlabBaseURL)
 	if err != nil {
 		return err
 	}
 
-	buildParameters, err := getBuildParameters(conf, build)
+	buildParameters, err := getBuildParameters(log, conf, build)
 	if err != nil {
 		return err
 	}
 
 	// first stop old pipelines with the same buildParameters
-	stopStalePipelines(gitlabClient, buildParameters)
+	stopStalePipelines(log, gitlabClient, buildParameters)
 
 	// trigger the new pipeline
 	integrationPipelinePath := "Northern.tech/Mender/mender-qa"
@@ -177,7 +177,7 @@ Hello :smile_cat: I created a pipeline for you here: [Pipeline-{{.Pipeline.ID}}]
 	return err
 }
 
-func stopStalePipelines(client *gitlab.Client, vars []*gitlab.PipelineVariable) {
+func stopStalePipelines(log *logrus.Entry, client *gitlab.Client, vars []*gitlab.PipelineVariable) {
 	integrationPipelinePath := "Northern.tech/Mender/mender-qa"
 
 	sort.SliceStable(vars, func(i, j int) bool {
@@ -232,7 +232,7 @@ func stopStalePipelines(client *gitlab.Client, vars []*gitlab.PipelineVariable) 
 	}
 }
 
-func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVariable, error) {
+func getBuildParameters(log *logrus.Entry, conf *config, build *buildOptions) ([]*gitlab.PipelineVariable, error) {
 	gitlabClient := gitlab.NewClient(nil, conf.gitlabToken)
 	err := gitlabClient.SetBaseURL(conf.gitlabBaseURL)
 	if err != nil {
@@ -319,7 +319,7 @@ func getBuildParameters(conf *config, build *buildOptions) ([]*gitlab.PipelineVa
 }
 
 // stopBuildsOfStalePRs stops any running pipelines on a PR which has been merged.
-func stopBuildsOfStalePRs(pr *github.PullRequestEvent, conf *config) error {
+func stopBuildsOfStalePRs(log *logrus.Entry, pr *github.PullRequestEvent, conf *config) error {
 
 	// If the action is "closed" the pull request was merged or just closed,
 	// stop builds in both cases.
@@ -330,7 +330,7 @@ func stopBuildsOfStalePRs(pr *github.PullRequestEvent, conf *config) error {
 
 	log.Debug("stopBuildsOfStalePRs: Find any running pipelines and kill mercilessly!")
 
-	for _, build := range getBuilds(conf, pr) {
+	for _, build := range getBuilds(log, conf, pr) {
 
 		gitlabClient := gitlab.NewClient(nil, conf.gitlabToken)
 		err := gitlabClient.SetBaseURL(conf.gitlabBaseURL)
@@ -339,13 +339,13 @@ func stopBuildsOfStalePRs(pr *github.PullRequestEvent, conf *config) error {
 			return err
 		}
 
-		buildParams, err := getBuildParameters(conf, &build)
+		buildParams, err := getBuildParameters(log, conf, &build)
 		if err != nil {
 			log.Debug("stopBuildsOfStalePRs: Failed to get the build-parameters for the build")
 			return err
 		}
 
-		stopStalePipelines(gitlabClient, buildParams)
+		stopStalePipelines(log, gitlabClient, buildParams)
 	}
 
 	return nil

@@ -7,7 +7,7 @@ import (
 	"os/exec"
 
 	"github.com/google/go-github/v28/github"
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 )
 
 func validDependabotPR(pr *github.PullRequestEvent) bool {
@@ -15,7 +15,7 @@ func validDependabotPR(pr *github.PullRequestEvent) bool {
 		pr.GetSender().GetLogin() == "dependabot[bot]"
 }
 
-func maybeVendorDependabotPR(pr *github.PullRequestEvent) (bool, error) {
+func maybeVendorDependabotPR(log *logrus.Entry, pr *github.PullRequestEvent) (bool, error) {
 	isDependabotPR := false
 	if !validDependabotPR(pr) {
 		log.Debugf("Not a valid dependabot PR (%s:%s), ignoring...\n", pr.GetSender().GetLogin(), pr.GetAction())

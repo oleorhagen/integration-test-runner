@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 )
 
 func getServiceRevisionFromIntegration(repo, baseBranch string, conf *config) (string, error) {
@@ -42,7 +42,7 @@ func repoToBuildParameter(repo string) string {
 }
 
 // Use python script in order to determine which integration branches to test with
-func getIntegrationVersionsUsingMicroservice(repo, version string, conf *config) ([]string, error) {
+func getIntegrationVersionsUsingMicroservice(log *logrus.Entry, repo, version string, conf *config) ([]string, error) {
 	cmdArgs := []string{"--integration-versions-including", repo, "--version", version}
 	if strings.HasPrefix(version, featureBranchPrefix) {
 		cmdArgs = append(cmdArgs, "--feature-branches")
