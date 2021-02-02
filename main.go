@@ -212,12 +212,12 @@ func createGitHubClient(conf *config) *github.Client {
 	return github.NewClient(tc)
 }
 
-func processGitHubWebhook(context *gin.Context, payload []byte, githubClient *github.Client, conf *config) {
+func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient *github.Client, conf *config) {
 
-	webhookType := github.WebHookType(context.Request)
-	webhookEvent, _ := github.ParseWebHook(github.WebHookType(context.Request), payload)
+	webhookType := github.WebHookType(ctx.Request)
+	webhookEvent, _ := github.ParseWebHook(github.WebHookType(ctx.Request), payload)
 
-	log := getCustomLoggerFromContext(context)
+	log := getCustomLoggerFromContext(ctx)
 
 	if webhookType == "pull_request" {
 		pr := webhookEvent.(*github.PullRequestEvent)
@@ -246,7 +246,7 @@ func processGitHubWebhook(context *gin.Context, payload []byte, githubClient *gi
 		}
 
 		// Continue to the integration Pipeline only for mendersoftware members
-		if member, _, _ := githubClient.Organizations.IsMember(context, "mendersoftware", pr.Sender.GetLogin()); !member {
+		if member, _, _ := githubClient.Organizations.IsMember(ctx, "mendersoftware", pr.Sender.GetLogin()); !member {
 			log.Warnf("%s is making a pullrequest, but he/she is not a member of mendersoftware, ignoring", pr.Sender.GetLogin())
 			return
 		}
