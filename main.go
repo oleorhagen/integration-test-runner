@@ -245,6 +245,11 @@ func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient *github
 			log.Errorf("Could not create PR branch: %s", err.Error())
 		}
 
+		// Delete merged pr branches in GitLab
+		if err = deleteStaleGitlabPRBranch(log, pr, conf); err != nil {
+			log.Errorf("Failed to delete the stale PR branch after the PR: %v was merged or closed. Error: %v", pr, err)
+		}
+
 		// Continue to the integration Pipeline only for mendersoftware members
 		if member, _, _ := githubClient.Organizations.IsMember(ctx, "mendersoftware", pr.Sender.GetLogin()); !member {
 			log.Warnf("%s is making a pullrequest, but he/she is not a member of mendersoftware, ignoring", pr.Sender.GetLogin())
