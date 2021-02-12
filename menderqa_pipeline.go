@@ -315,6 +315,16 @@ func getBuildParameters(log *logrus.Entry, conf *config, build *buildOptions) ([
 	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "TEST_VEXPRESS_QEMU_UBOOT_UEFI_GRUB", Value: qemuParam})
 
 	buildParameters = append(buildParameters, &gitlab.PipelineVariable{Key: "BUILD_BEAGLEBONEBLACK", Value: qemuParam})
+
+	// Set BUILD_CLIENT = false, if target repo not in the qemuBuildRepositories list
+	buildClient := &gitlab.PipelineVariable{Key: "BUILD_CLIENT", Value: "false"}
+	for _, prebuiltClientRepo := range qemuBuildRepositories {
+		if build.repo == prebuiltClientRepo {
+			buildClient.Value = "true"
+		}
+	}
+	buildParameters = append(buildParameters, buildClient)
+
 	return buildParameters, nil
 }
 
