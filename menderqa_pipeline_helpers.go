@@ -10,7 +10,7 @@ import (
 )
 
 func getServiceRevisionFromIntegration(repo, baseBranch string, conf *config) (string, error) {
-	c := exec.Command("release_tool.py", "--version-of", repo, "--in-integration-version", baseBranch)
+	c := exec.Command("python3", "release_tool.py", "--version-of", repo, "--in-integration-version", baseBranch)
 	c.Dir = conf.integrationDirectory + "/extra/"
 	version, err := c.Output()
 	if err != nil {
@@ -43,11 +43,11 @@ func repoToBuildParameter(repo string) string {
 
 // Use python script in order to determine which integration branches to test with
 func getIntegrationVersionsUsingMicroservice(log *logrus.Entry, repo, version string, conf *config) ([]string, error) {
-	cmdArgs := []string{"--integration-versions-including", repo, "--version", version}
+	cmdArgs := []string{"release_tool.py", "--integration-versions-including", repo, "--version", version}
 	if strings.HasPrefix(version, featureBranchPrefix) {
 		cmdArgs = append(cmdArgs, "--feature-branches")
 	}
-	c := exec.Command("release_tool.py", cmdArgs...)
+	c := exec.Command("python3", cmdArgs...)
 	c.Dir = conf.integrationDirectory + "/extra/"
 	integrations, err := c.Output()
 
@@ -69,7 +69,7 @@ func getIntegrationVersionsUsingMicroservice(log *logrus.Entry, repo, version st
 }
 
 func getListOfVersionedRepositories(inVersion string) ([]string, error) {
-	c := exec.Command("release_tool.py", "--list", "--in-integration-version", inVersion)
+	c := exec.Command("python3", "release_tool.py", "--list", "--in-integration-version", inVersion)
 	output, err := c.Output()
 	if err != nil {
 		return nil, fmt.Errorf("getListOfVersionedRepositories: Error: %v (%s)", err, output)

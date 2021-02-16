@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -11,7 +10,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/gin-gonic/gin"
 	"github.com/google/go-github/v28/github"
-	"golang.org/x/oauth2"
+	clientgithub "github.com/mendersoftware/integration-test-runner/client/github"
 
 	"github.com/sirupsen/logrus"
 )
@@ -202,17 +201,7 @@ func getCustomLoggerFromContext(ctx *gin.Context) *logrus.Entry {
 	return logrus.WithField("delivery", deliveryID)
 }
 
-func createGitHubClient(conf *config) *github.Client {
-	ctx := context.Background()
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: conf.githubToken},
-	)
-
-	tc := oauth2.NewClient(ctx, ts)
-	return github.NewClient(tc)
-}
-
-func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient *github.Client, conf *config) {
+func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient clientgithub.Client, conf *config) {
 
 	webhookType := github.WebHookType(ctx.Request)
 	webhookEvent, _ := github.ParseWebHook(github.WebHookType(ctx.Request), payload)
@@ -248,8 +237,19 @@ func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient *github
 			log.Errorf("Failed to delete the stale PR branch after the PR: %v was merged or closed. Error: %v", pr, err)
 		}
 
+		// make sure we only parse one pr at a time, since we use release_tool
+		mutex.Lock()
+
+		// If the pr was merged, suggest cherry-picks
+		if err := suggestCherryPicks(log, pr, githubClient, conf); err != nil {
+			log.Errorf("Failed to suggest cherry picks for the pr %v. Error: %v", pr, err)
+		}
+
+		// release the mutex
+		mutex.Unlock()
+
 		// Continue to the integration Pipeline only for mendersoftware members
-		if member, _, _ := githubClient.Organizations.IsMember(ctx, "mendersoftware", pr.Sender.GetLogin()); !member {
+		if member := githubClient.IsOrganizationMember(ctx, "mendersoftware", pr.Sender.GetLogin()); !member {
 			log.Warnf("%s is making a pullrequest, but he/she is not a member of mendersoftware, ignoring", pr.Sender.GetLogin())
 			return
 		}
@@ -270,6 +270,8 @@ func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient *github
 		if err := syncIfOSHasEnterpriseRepo(log, conf, pr); err != nil {
 			log.Errorf("Failed to sync the OS and Enterprise repos: %s", err.Error())
 		}
+
+		// release the mutex
 		mutex.Unlock()
 
 		for idx, build := range builds {
@@ -309,7 +311,7 @@ func main() {
 
 	logrus.Infoln("using settings: ", spew.Sdump(conf))
 
-	githubClient := createGitHubClient(conf)
+	githubClient := clientgithub.NewGitHubClient(conf.githubToken)
 	r := gin.Default()
 
 	// webhook for GitHub

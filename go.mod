@@ -11,6 +11,7 @@ require (
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/mattn/go-isatty v0.0.8-0.20190424075123-c1975dc15c1d // indirect
 	github.com/sirupsen/logrus v1.4.2-0.20190510074101-f0375eb5b588
+	github.com/stretchr/testify v1.3.0
 	github.com/ugorji/go v1.1.5-0.20190507201401-08f7b401aef1 // indirect
 	github.com/xanzy/go-gitlab v0.20.2-0.20190923085917-a59c72c5a3c7
 	golang.org/x/net v0.0.0-20190514140710-3ec191127204 // indirect

@@ -14,8 +14,9 @@ import (
 	"text/template"
 
 	"github.com/google/go-github/v28/github"
-
 	"github.com/sirupsen/logrus"
+
+	clientgithub "github.com/mendersoftware/integration-test-runner/client/github"
 )
 
 // syncIfOSHasEnterpriseRepo detects whether a commit has been merged to
@@ -264,8 +265,6 @@ type createPRArgs struct {
 
 func createPullRequestFromTestBotFork(args createPRArgs) (*github.PullRequest, error) {
 
-	client := createGitHubClient(args.conf)
-
 	newPR := &github.NewPullRequest{
 		Title:               github.String(args.message),
 		Head:                github.String(args.prBranch),
@@ -274,7 +273,8 @@ func createPullRequestFromTestBotFork(args createPRArgs) (*github.PullRequest, e
 		MaintainerCanModify: github.Bool(true),
 	}
 
-	pr, _, err := client.PullRequests.Create(context.Background(), "mendersoftware", args.repo, newPR)
+	client := clientgithub.NewGitHubClient(args.conf.githubToken)
+	pr, err := client.CreatePullRequest(context.Background(), "mendersoftware", args.repo, newPR)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create the PR for: (%s) %v", args.repo, err)
 	}
@@ -355,9 +355,7 @@ This can be done by following:
 	comment := github.IssueComment{
 		Body: &commentBody,
 	}
-	client := createGitHubClient(args.conf)
 
-	_, _, err := client.Issues.CreateComment(context.Background(), "mendersoftware", args.repo, args.pr.GetNumber(), &comment)
-
-	return err
+	client := clientgithub.NewGitHubClient(args.conf.githubToken)
+	return client.CreateComment(context.Background(), "mendersoftware", args.repo, args.pr.GetNumber(), &comment)
 }
