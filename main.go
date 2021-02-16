@@ -228,8 +228,7 @@ func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient *github
 			return
 		}
 
-		isDependabotPR, err := maybeVendorDependabotPR(log, pr)
-		if isDependabotPR {
+		if isDependabotPR, err := maybeVendorDependabotPR(log, pr); isDependabotPR {
 			if err != nil {
 				log.Errorf("maybeVendorDependabotPR: %v", err)
 			}
@@ -240,13 +239,12 @@ func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient *github
 
 		// To run component's Pipeline create a branch in GitLab, regardless of the PR
 		// coming from a mendersoftware member or not (equivalent to the old Travis tests)
-		err = createPullRequestBranch(log, *pr.Organization.Login, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action)
-		if err != nil {
+		if err := createPullRequestBranch(log, *pr.Organization.Login, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action); err != nil {
 			log.Errorf("Could not create PR branch: %s", err.Error())
 		}
 
 		// Delete merged pr branches in GitLab
-		if err = deleteStaleGitlabPRBranch(log, pr, conf); err != nil {
+		if err := deleteStaleGitlabPRBranch(log, pr, conf); err != nil {
 			log.Errorf("Failed to delete the stale PR branch after the PR: %v was merged or closed. Error: %v", pr, err)
 		}
 
@@ -264,12 +262,12 @@ func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient *github
 
 		// First check if the PR has been merged. If so, stop
 		// the pipeline, and do nothing else.
-		if err = stopBuildsOfStalePRs(log, pr, conf); err != nil {
+		if err := stopBuildsOfStalePRs(log, pr, conf); err != nil {
 			log.Errorf("Failed to stop a stale build after the PR: %v was merged or closed. Error: %v", pr, err)
 		}
 
 		// Keep the OS and Enterprise repos in sync
-		if err = syncIfOSHasEnterpriseRepo(log, conf, pr); err != nil {
+		if err := syncIfOSHasEnterpriseRepo(log, conf, pr); err != nil {
 			log.Errorf("Failed to sync the OS and Enterprise repos: %s", err.Error())
 		}
 		mutex.Unlock()
@@ -280,8 +278,7 @@ func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient *github
 				log.Info("Skipping build targeting meta-mender:master-next")
 				continue
 			}
-			err = triggerBuild(log, conf, &build, pr)
-			if err != nil {
+			if err := triggerBuild(log, conf, &build, pr); err != nil {
 				log.Errorf("Could not start build: %s", err.Error())
 			}
 		}
@@ -332,5 +329,5 @@ func main() {
 	// 200 replay for the loadbalancer
 	r.GET("/", func(_ *gin.Context) {})
 
-	r.Run("0.0.0.0:8080")
+	_ = r.Run("0.0.0.0:8080")
 }
