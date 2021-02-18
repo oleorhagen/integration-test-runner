@@ -10,9 +10,10 @@ import (
 	"text/template"
 
 	"github.com/google/go-github/v28/github"
+	"github.com/sirupsen/logrus"
 	"github.com/xanzy/go-gitlab"
 
-	"github.com/sirupsen/logrus"
+	clientgithub "github.com/mendersoftware/integration-test-runner/client/github"
 )
 
 func parsePullRequest(log *logrus.Entry, conf *config, action string, pr *github.PullRequestEvent) []buildOptions {
@@ -167,8 +168,9 @@ Hello :smile_cat: I created a pipeline for you here: [Pipeline-{{.Pipeline.ID}}]
 	comment := github.IssueComment{
 		Body: &commentBody,
 	}
-	githubClient := createGitHubClient(conf)
-	_, _, err = githubClient.Issues.CreateComment(context.Background(),
+
+	client := clientgithub.NewGitHubClient(conf.githubToken)
+	err = client.CreateComment(context.Background(),
 		"mendersoftware", *pr.GetRepo().Name, pr.GetNumber(), &comment)
 	if err != nil {
 		log.Infof("Failed to comment on the pr: %v, Error: %s", pr, err.Error())

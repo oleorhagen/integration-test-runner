@@ -14,8 +14,9 @@ import (
 	"text/template"
 
 	"github.com/google/go-github/v28/github"
-
 	"github.com/sirupsen/logrus"
+
+	clientgithub "github.com/mendersoftware/integration-test-runner/client/github"
 )
 
 // syncIfOSHasEnterpriseRepo detects whether a commit has been merged to
@@ -73,7 +74,7 @@ func syncIfOSHasEnterpriseRepo(log *logrus.Entry, conf *config, gpr *github.Pull
 			PRNumber := strconv.Itoa(pr.GetNumber())
 			PRBranchName := "mergeostoent_" + PRNumber
 
-			merged, err := createPRBranchOnEnterprise(log, repo.GetName(), branchRef, PRNumber, PRBranchName)
+			merged, err := createPRBranchOnEnterprise(log, repo.GetName(), branchRef, PRNumber, PRBranchName, conf)
 			if err != nil {
 				return fmt.Errorf("syncIfOSHasEnterpriseRepo: Failed to create the PR branch on the Enterprise repo due to error: %v", err)
 			}
@@ -126,7 +127,7 @@ func syncIfOSHasEnterpriseRepo(log *logrus.Entry, conf *config, gpr *github.Pull
 // createPRBranchOnEnterprise creates a new branch in the Enterprise repository
 // starting at the branch in which to sync, with the name 'PRBranchName'
 // and merges this with the OS equivalent of 'branchName'.
-func createPRBranchOnEnterprise(log *logrus.Entry, repo, branchName, PRNumber, PRBranchName string) (merged bool, err error) {
+func createPRBranchOnEnterprise(log *logrus.Entry, repo, branchName, PRNumber, PRBranchName string, conf *config) (merged bool, err error) {
 
 	tmpdir, err := ioutil.TempDir("", repo)
 	if err != nil {
@@ -141,21 +142,24 @@ func createPRBranchOnEnterprise(log *logrus.Entry, repo, branchName, PRNumber, P
 		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	gitcmd = exec.Command("git", "remote", "add", "opensource", "git@github.com:mendersoftware/"+repo+".git")
+	repoURL := getRemoteURLGitHub(conf.githubProtocol, "mendersoftware", repo)
+	gitcmd = exec.Command("git", "remote", "add", "opensource", repoURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
 	if err != nil {
 		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	gitcmd = exec.Command("git", "remote", "add", "enterprise", "git@github.com:mendersoftware/"+repo+"-enterprise"+".git")
+	repoURL = getRemoteURLGitHub(conf.githubProtocol, "mendersoftware", repo+"-enterprise")
+	gitcmd = exec.Command("git", "remote", "add", "enterprise", repoURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
 	if err != nil {
 		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	gitcmd = exec.Command("git", "remote", "add", "mender-test-bot", "git@github.com:mender-test-bot/"+repo+"-enterprise"+".git")
+	repoURL = getRemoteURLGitHub(conf.githubProtocol, "mender-test-bot", repo+"-enterprise")
+	gitcmd = exec.Command("git", "remote", "add", "mender-test-bot", repoURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
 	if err != nil {
@@ -264,8 +268,6 @@ type createPRArgs struct {
 
 func createPullRequestFromTestBotFork(args createPRArgs) (*github.PullRequest, error) {
 
-	client := createGitHubClient(args.conf)
-
 	newPR := &github.NewPullRequest{
 		Title:               github.String(args.message),
 		Head:                github.String(args.prBranch),
@@ -274,7 +276,8 @@ func createPullRequestFromTestBotFork(args createPRArgs) (*github.PullRequest, e
 		MaintainerCanModify: github.Bool(true),
 	}
 
-	pr, _, err := client.PullRequests.Create(context.Background(), "mendersoftware", args.repo, newPR)
+	client := clientgithub.NewGitHubClient(args.conf.githubToken)
+	pr, err := client.CreatePullRequest(context.Background(), "mendersoftware", args.repo, newPR)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create the PR for: (%s) %v", args.repo, err)
 	}
@@ -355,9 +358,7 @@ This can be done by following:
 	comment := github.IssueComment{
 		Body: &commentBody,
 	}
-	client := createGitHubClient(args.conf)
 
-	_, _, err := client.Issues.CreateComment(context.Background(), "mendersoftware", args.repo, args.pr.GetNumber(), &comment)
-
-	return err
+	client := clientgithub.NewGitHubClient(args.conf.githubToken)
+	return client.CreateComment(context.Background(), "mendersoftware", args.repo, args.pr.GetNumber(), &comment)
 }

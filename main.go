@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -11,7 +10,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/gin-gonic/gin"
 	"github.com/google/go-github/v28/github"
-	"golang.org/x/oauth2"
+	clientgithub "github.com/mendersoftware/integration-test-runner/client/github"
 
 	"github.com/sirupsen/logrus"
 )
@@ -20,6 +19,7 @@ var mutex = &sync.Mutex{}
 
 type config struct {
 	githubSecret                     []byte
+	githubProtocol                   GitProtocol
 	githubToken                      string
 	gitlabToken                      string
 	gitlabBaseURL                    string
@@ -171,6 +171,7 @@ func getConfig() (*config, error) {
 
 	return &config{
 		githubSecret:                     []byte(githubSecret),
+		githubProtocol:                   GitProtocolSSH,
 		githubToken:                      githubToken,
 		gitlabToken:                      gitlabToken,
 		gitlabBaseURL:                    gitlabBaseURL,
@@ -202,17 +203,7 @@ func getCustomLoggerFromContext(ctx *gin.Context) *logrus.Entry {
 	return logrus.WithField("delivery", deliveryID)
 }
 
-func createGitHubClient(conf *config) *github.Client {
-	ctx := context.Background()
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: conf.githubToken},
-	)
-
-	tc := oauth2.NewClient(ctx, ts)
-	return github.NewClient(tc)
-}
-
-func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient *github.Client, conf *config) {
+func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient clientgithub.Client, conf *config) {
 
 	webhookType := github.WebHookType(ctx.Request)
 	webhookEvent, _ := github.ParseWebHook(github.WebHookType(ctx.Request), payload)
@@ -228,8 +219,7 @@ func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient *github
 			return
 		}
 
-		isDependabotPR, err := maybeVendorDependabotPR(log, pr)
-		if isDependabotPR {
+		if isDependabotPR, err := maybeVendorDependabotPR(log, pr, conf); isDependabotPR {
 			if err != nil {
 				log.Errorf("maybeVendorDependabotPR: %v", err)
 			}
@@ -240,18 +230,28 @@ func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient *github
 
 		// To run component's Pipeline create a branch in GitLab, regardless of the PR
 		// coming from a mendersoftware member or not (equivalent to the old Travis tests)
-		err = createPullRequestBranch(log, *pr.Organization.Login, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action)
-		if err != nil {
+		if err := createPullRequestBranch(log, *pr.Organization.Login, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action, conf); err != nil {
 			log.Errorf("Could not create PR branch: %s", err.Error())
 		}
 
 		// Delete merged pr branches in GitLab
-		if err = deleteStaleGitlabPRBranch(log, pr, conf); err != nil {
+		if err := deleteStaleGitlabPRBranch(log, pr, conf); err != nil {
 			log.Errorf("Failed to delete the stale PR branch after the PR: %v was merged or closed. Error: %v", pr, err)
 		}
 
+		// make sure we only parse one pr at a time, since we use release_tool
+		mutex.Lock()
+
+		// If the pr was merged, suggest cherry-picks
+		if err := suggestCherryPicks(log, pr, githubClient, conf); err != nil {
+			log.Errorf("Failed to suggest cherry picks for the pr %v. Error: %v", pr, err)
+		}
+
+		// release the mutex
+		mutex.Unlock()
+
 		// Continue to the integration Pipeline only for mendersoftware members
-		if member, _, _ := githubClient.Organizations.IsMember(ctx, "mendersoftware", pr.Sender.GetLogin()); !member {
+		if member := githubClient.IsOrganizationMember(ctx, "mendersoftware", pr.Sender.GetLogin()); !member {
 			log.Warnf("%s is making a pullrequest, but he/she is not a member of mendersoftware, ignoring", pr.Sender.GetLogin())
 			return
 		}
@@ -264,14 +264,16 @@ func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient *github
 
 		// First check if the PR has been merged. If so, stop
 		// the pipeline, and do nothing else.
-		if err = stopBuildsOfStalePRs(log, pr, conf); err != nil {
+		if err := stopBuildsOfStalePRs(log, pr, conf); err != nil {
 			log.Errorf("Failed to stop a stale build after the PR: %v was merged or closed. Error: %v", pr, err)
 		}
 
 		// Keep the OS and Enterprise repos in sync
-		if err = syncIfOSHasEnterpriseRepo(log, conf, pr); err != nil {
+		if err := syncIfOSHasEnterpriseRepo(log, conf, pr); err != nil {
 			log.Errorf("Failed to sync the OS and Enterprise repos: %s", err.Error())
 		}
+
+		// release the mutex
 		mutex.Unlock()
 
 		for idx, build := range builds {
@@ -280,8 +282,7 @@ func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient *github
 				log.Info("Skipping build targeting meta-mender:master-next")
 				continue
 			}
-			err = triggerBuild(log, conf, &build, pr)
-			if err != nil {
+			if err := triggerBuild(log, conf, &build, pr); err != nil {
 				log.Errorf("Could not start build: %s", err.Error())
 			}
 		}
@@ -293,7 +294,7 @@ func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient *github
 		log.Debugf("Got push event :: repo %s :: ref %s", repoName, refName)
 		for _, repo := range conf.watchRepositoriesGitLabSync {
 			if repoName == repo {
-				err := syncRemoteRef(log, repoOrg, repoName, refName)
+				err := syncRemoteRef(log, repoOrg, repoName, refName, conf)
 				if err != nil {
 					log.Errorf("Could not sync branch: %s", err.Error())
 				}
@@ -312,7 +313,7 @@ func main() {
 
 	logrus.Infoln("using settings: ", spew.Sdump(conf))
 
-	githubClient := createGitHubClient(conf)
+	githubClient := clientgithub.NewGitHubClient(conf.githubToken)
 	r := gin.Default()
 
 	// webhook for GitHub
@@ -332,5 +333,5 @@ func main() {
 	// 200 replay for the loadbalancer
 	r.GET("/", func(_ *gin.Context) {})
 
-	r.Run("0.0.0.0:8080")
+	_ = r.Run("0.0.0.0:8080")
 }

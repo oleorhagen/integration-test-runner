@@ -10,7 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func createPullRequestBranch(log *logrus.Entry, org, repo, pr, action string) error {
+func createPullRequestBranch(log *logrus.Entry, org, repo, pr, action string, conf *config) error {
 
 	if action != "opened" && action != "edited" && action != "reopened" &&
 		action != "synchronize" && action != "ready_for_review" {
@@ -31,7 +31,8 @@ func createPullRequestBranch(log *logrus.Entry, org, repo, pr, action string) er
 		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	gitcmd = exec.Command("git", "remote", "add", "github", "git@github.com:mendersoftware/"+repo)
+	repoURL := getRemoteURLGitHub(conf.githubProtocol, "mendersoftware", repo)
+	gitcmd = exec.Command("git", "remote", "add", "github", repoURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
 	if err != nil {
