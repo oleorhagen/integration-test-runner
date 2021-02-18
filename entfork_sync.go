@@ -74,7 +74,7 @@ func syncIfOSHasEnterpriseRepo(log *logrus.Entry, conf *config, gpr *github.Pull
 			PRNumber := strconv.Itoa(pr.GetNumber())
 			PRBranchName := "mergeostoent_" + PRNumber
 
-			merged, err := createPRBranchOnEnterprise(log, repo.GetName(), branchRef, PRNumber, PRBranchName)
+			merged, err := createPRBranchOnEnterprise(log, repo.GetName(), branchRef, PRNumber, PRBranchName, conf)
 			if err != nil {
 				return fmt.Errorf("syncIfOSHasEnterpriseRepo: Failed to create the PR branch on the Enterprise repo due to error: %v", err)
 			}
@@ -127,7 +127,7 @@ func syncIfOSHasEnterpriseRepo(log *logrus.Entry, conf *config, gpr *github.Pull
 // createPRBranchOnEnterprise creates a new branch in the Enterprise repository
 // starting at the branch in which to sync, with the name 'PRBranchName'
 // and merges this with the OS equivalent of 'branchName'.
-func createPRBranchOnEnterprise(log *logrus.Entry, repo, branchName, PRNumber, PRBranchName string) (merged bool, err error) {
+func createPRBranchOnEnterprise(log *logrus.Entry, repo, branchName, PRNumber, PRBranchName string, conf *config) (merged bool, err error) {
 
 	tmpdir, err := ioutil.TempDir("", repo)
 	if err != nil {
@@ -142,21 +142,24 @@ func createPRBranchOnEnterprise(log *logrus.Entry, repo, branchName, PRNumber, P
 		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	gitcmd = exec.Command("git", "remote", "add", "opensource", "git@github.com:mendersoftware/"+repo+".git")
+	repoURL := getRemoteURLGitHub(conf.githubProtocol, "mendersoftware", repo)
+	gitcmd = exec.Command("git", "remote", "add", "opensource", repoURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
 	if err != nil {
 		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	gitcmd = exec.Command("git", "remote", "add", "enterprise", "git@github.com:mendersoftware/"+repo+"-enterprise"+".git")
+	repoURL = getRemoteURLGitHub(conf.githubProtocol, "mendersoftware", repo+"-enterprise")
+	gitcmd = exec.Command("git", "remote", "add", "enterprise", repoURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
 	if err != nil {
 		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	gitcmd = exec.Command("git", "remote", "add", "mender-test-bot", "git@github.com:mender-test-bot/"+repo+"-enterprise"+".git")
+	repoURL = getRemoteURLGitHub(conf.githubProtocol, "mender-test-bot", repo+"-enterprise")
+	gitcmd = exec.Command("git", "remote", "add", "mender-test-bot", repoURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
 	if err != nil {

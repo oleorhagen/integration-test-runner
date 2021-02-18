@@ -123,7 +123,9 @@ Hello :smile_cat: This PR contains changelog entries. Please, verify the need of
 				).Return(nil)
 			}
 
-			conf := &config{}
+			conf := &config{
+				githubProtocol: GitProtocolHTTP,
+			}
 			conf.integrationDirectory = tmpdir
 
 			log := logrus.NewEntry(logrus.StandardLogger())

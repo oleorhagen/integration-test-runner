@@ -15,7 +15,7 @@ func validDependabotPR(pr *github.PullRequestEvent) bool {
 		pr.GetSender().GetLogin() == "dependabot[bot]"
 }
 
-func maybeVendorDependabotPR(log *logrus.Entry, pr *github.PullRequestEvent) (bool, error) {
+func maybeVendorDependabotPR(log *logrus.Entry, pr *github.PullRequestEvent, conf *config) (bool, error) {
 	isDependabotPR := false
 	if !validDependabotPR(pr) {
 		log.Debugf("Not a valid dependabot PR (%s:%s), ignoring...\n", pr.GetSender().GetLogin(), pr.GetAction())
@@ -39,7 +39,8 @@ func maybeVendorDependabotPR(log *logrus.Entry, pr *github.PullRequestEvent) (bo
 	}
 	defer os.RemoveAll(tmpdir)
 
-	cmd := exec.Command("git", "clone", "--single-branch", "--branch", branchName, "git@github.com:mendersoftware/"+repo+".git")
+	repoURL := getRemoteURLGitHub(conf.githubProtocol, "mendersoftware", repo)
+	cmd := exec.Command("git", "clone", "--single-branch", "--branch", branchName, repoURL)
 	cmd.Dir = tmpdir
 	out, err := cmd.CombinedOutput()
 	if err != nil {

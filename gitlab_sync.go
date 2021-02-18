@@ -10,7 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func syncRemoteRef(log *logrus.Entry, org, repo, ref string) error {
+func syncRemoteRef(log *logrus.Entry, org, repo, ref string, conf *config) error {
 
 	tmpdir, err := ioutil.TempDir("", repo)
 	if err != nil {
@@ -25,7 +25,8 @@ func syncRemoteRef(log *logrus.Entry, org, repo, ref string) error {
 		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	gitcmd = exec.Command("git", "remote", "add", "github", "git@github.com:"+org+"/"+repo)
+	repoURL := getRemoteURLGitHub(conf.githubProtocol, "mendersoftware", repo)
+	gitcmd = exec.Command("git", "remote", "add", "github", repoURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
 	if err != nil {

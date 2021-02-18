@@ -19,6 +19,7 @@ var mutex = &sync.Mutex{}
 
 type config struct {
 	githubSecret                     []byte
+	githubProtocol                   GitProtocol
 	githubToken                      string
 	gitlabToken                      string
 	gitlabBaseURL                    string
@@ -170,6 +171,7 @@ func getConfig() (*config, error) {
 
 	return &config{
 		githubSecret:                     []byte(githubSecret),
+		githubProtocol:                   GitProtocolSSH,
 		githubToken:                      githubToken,
 		gitlabToken:                      gitlabToken,
 		gitlabBaseURL:                    gitlabBaseURL,
@@ -217,7 +219,7 @@ func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient clientg
 			return
 		}
 
-		if isDependabotPR, err := maybeVendorDependabotPR(log, pr); isDependabotPR {
+		if isDependabotPR, err := maybeVendorDependabotPR(log, pr, conf); isDependabotPR {
 			if err != nil {
 				log.Errorf("maybeVendorDependabotPR: %v", err)
 			}
@@ -228,7 +230,7 @@ func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient clientg
 
 		// To run component's Pipeline create a branch in GitLab, regardless of the PR
 		// coming from a mendersoftware member or not (equivalent to the old Travis tests)
-		if err := createPullRequestBranch(log, *pr.Organization.Login, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action); err != nil {
+		if err := createPullRequestBranch(log, *pr.Organization.Login, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action, conf); err != nil {
 			log.Errorf("Could not create PR branch: %s", err.Error())
 		}
 
@@ -292,7 +294,7 @@ func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient clientg
 		log.Debugf("Got push event :: repo %s :: ref %s", repoName, refName)
 		for _, repo := range conf.watchRepositoriesGitLabSync {
 			if repoName == repo {
-				err := syncRemoteRef(log, repoOrg, repoName, refName)
+				err := syncRemoteRef(log, repoOrg, repoName, refName, conf)
 				if err != nil {
 					log.Errorf("Could not sync branch: %s", err.Error())
 				}

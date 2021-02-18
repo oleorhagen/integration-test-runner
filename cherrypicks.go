@@ -62,7 +62,8 @@ func suggestCherryPicks(log *logrus.Entry, pr *github.PullRequestEvent, githubCl
 		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	gitcmd = exec.Command("git", "remote", "add", "github", "git@github.com:mendersoftware/"+repo)
+	repoURL := getRemoteURLGitHub(conf.githubProtocol, "mendersoftware", repo)
+	gitcmd = exec.Command("git", "remote", "add", "github", repoURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
 	if err != nil {
