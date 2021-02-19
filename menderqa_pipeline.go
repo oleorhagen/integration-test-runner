@@ -247,9 +247,9 @@ func getBuildParameters(log *logrus.Entry, conf *config, build *buildOptions) ([
 	var versionedRepositories []string
 	if build.repo == "meta-mender" {
 		// For meta-mender, pick master versions of all Mender release repos.
-		versionedRepositories, err = getListOfVersionedRepositories("origin/master")
+		versionedRepositories, err = getListOfVersionedRepositories("origin/master", conf)
 	} else {
-		versionedRepositories, err = getListOfVersionedRepositories("origin/" + build.baseBranch)
+		versionedRepositories, err = getListOfVersionedRepositories("origin/"+build.baseBranch, conf)
 	}
 	if err != nil {
 		log.Errorf("Could not get list of repositories: %s", err.Error())

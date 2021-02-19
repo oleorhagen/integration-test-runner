@@ -68,8 +68,9 @@ func getIntegrationVersionsUsingMicroservice(log *logrus.Entry, repo, version st
 	return branches, nil
 }
 
-func getListOfVersionedRepositories(inVersion string) ([]string, error) {
+func getListOfVersionedRepositories(inVersion string, conf *config) ([]string, error) {
 	c := exec.Command("python3", "release_tool.py", "--list", "--in-integration-version", inVersion)
+	c.Dir = conf.integrationDirectory + "/extra/"
 	output, err := c.Output()
 	if err != nil {
 		return nil, fmt.Errorf("getListOfVersionedRepositories: Error: %v (%s)", err, output)
