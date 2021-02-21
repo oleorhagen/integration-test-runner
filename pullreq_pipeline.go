@@ -31,7 +31,7 @@ func createPullRequestBranch(log *logrus.Entry, org, repo, pr, action string, co
 		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	repoURL := getRemoteURLGitHub(conf.githubProtocol, "mendersoftware", repo)
+	repoURL := getRemoteURLGitHub(conf.githubProtocol, githubOrganization, repo)
 	gitcmd = exec.Command("git", "remote", "add", "github", repoURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()

@@ -34,7 +34,7 @@ func getBuilds(log *logrus.Entry, conf *config, pr *github.PullRequestEvent) []b
 
 	var builds []buildOptions
 
-	repo := *pr.Repo.Name
+	repo := pr.GetRepo().GetName()
 
 	commitSHA := pr.PullRequest.Head.GetSHA()
 	//GetLabel returns "mendersoftware:master", we just want the branch
@@ -171,7 +171,7 @@ Hello :smile_cat: I created a pipeline for you here: [Pipeline-{{.Pipeline.ID}}]
 
 	client := clientgithub.NewGitHubClient(conf.githubToken)
 	err = client.CreateComment(context.Background(),
-		"mendersoftware", *pr.GetRepo().Name, pr.GetNumber(), &comment)
+		githubOrganization, pr.GetRepo().GetName(), pr.GetNumber(), &comment)
 	if err != nil {
 		log.Infof("Failed to comment on the pr: %v, Error: %s", pr, err.Error())
 	}
@@ -186,7 +186,7 @@ func stopStalePipelines(log *logrus.Entry, client *gitlab.Client, vars []*gitlab
 		return vars[i].Key < vars[j].Key
 	})
 
-	username := "mender-test-bot"
+	username := githubBotName
 	status := gitlab.Pending
 	opt := &gitlab.ListProjectPipelinesOptions{
 		Username: &username,

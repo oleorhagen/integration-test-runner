@@ -25,7 +25,7 @@ func syncRemoteRef(log *logrus.Entry, org, repo, ref string, conf *config) error
 		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	repoURL := getRemoteURLGitHub(conf.githubProtocol, "mendersoftware", repo)
+	repoURL := getRemoteURLGitHub(conf.githubProtocol, githubOrganization, repo)
 	gitcmd = exec.Command("git", "remote", "add", "github", repoURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()

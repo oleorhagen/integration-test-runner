@@ -116,7 +116,7 @@ Hello :smile_cat: This PR contains changelog entries. Please, verify the need of
 					mock.MatchedBy(func(ctx context.Context) bool {
 						return true
 					}),
-					"mendersoftware",
+					githubOrganization,
 					*tc.pr.Repo.Name,
 					*tc.pr.Number,
 					tc.comment,

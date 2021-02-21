@@ -11,7 +11,7 @@ require (
 	github.com/google/go-querystring v1.0.1-0.20190318165438-c8c88dbee036 // indirect
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/mattn/go-isatty v0.0.8-0.20190424075123-c1975dc15c1d // indirect
-	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.4.2-0.20190510074101-f0375eb5b588
 	github.com/stretchr/testify v1.3.0
 	github.com/ugorji/go v1.1.5-0.20190507201401-08f7b401aef1 // indirect
