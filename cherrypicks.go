@@ -116,13 +116,19 @@ func suggestCherryPicks(log *logrus.Entry, pr *github.PullRequestEvent, githubCl
 	if err != nil {
 		return err
 	}
-	releaseBranches := make([]string, 3)
-	for i, version := range versions {
+	releaseBranches := []string{}
+	for _, version := range versions {
 		releaseBranch, err := getServiceRevisionFromIntegration(repo, "origin/"+version, conf)
 		if err != nil {
 			return err
+		} else if releaseBranch != "" {
+			releaseBranches = append(releaseBranches, releaseBranch+" (release "+version+")")
 		}
-		releaseBranches[i] = releaseBranch + " (release " + version + ")"
+	}
+
+	// no suggestions, stop here
+	if len(releaseBranches) == 0 {
+		return nil
 	}
 
 	// suggest cherry-picking with a comment
