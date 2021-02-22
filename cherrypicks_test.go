@@ -91,6 +91,28 @@ Hello :smile_cat: This PR contains changelog entries. Please, verify the need of
 `),
 			},
 		},
+		"cherry picks, changelogs, less than three release branches": {
+			pr: &github.PullRequestEvent{
+				Action: github.String("closed"),
+				Number: github.Int(18),
+				PullRequest: &github.PullRequest{
+					Base: &github.PullRequestBranch{
+						Ref: github.String("master"),
+						SHA: github.String("11cc44037981d16e087b11ab7d6afdffae73e74e"),
+					},
+					Merged: github.Bool(true),
+				},
+				Repo: &github.Repository{
+					Name: github.String("mender-connect"),
+				},
+			},
+			comment: &github.IssueComment{
+				Body: github.String(`
+Hello :smile_cat: This PR contains changelog entries. Please, verify the need of backporting it to the following release branches:
+1.0.x (release 2.6.x)
+`),
+			},
+		},
 	}
 
 	tmpdir, err := ioutil.TempDir("", "*")
