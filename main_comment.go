@@ -61,7 +61,11 @@ func processGitHubComment(ctx *gin.Context, comment *github.IssueCommentEvent, g
 		mutex.Lock()
 
 		// get the list of builds
-		prRequest := &github.PullRequestEvent{Repo: comment.GetRepo(), PullRequest: pr}
+		prRequest := &github.PullRequestEvent{
+			Repo:        comment.GetRepo(),
+			Number:      github.Int(pr.GetNumber()),
+			PullRequest: pr,
+		}
 		builds := parsePullRequest(log, conf, "opened", prRequest)
 		log.Infof("%s:%d will trigger %d builds", comment.GetRepo().GetName(), pr.GetNumber(), len(builds))
 
