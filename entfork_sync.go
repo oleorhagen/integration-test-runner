@@ -86,7 +86,7 @@ func syncIfOSHasEnterpriseRepo(log *logrus.Entry, conf *config, gpr *github.Pull
 			enterprisePR, err := createPullRequestFromTestBotFork(createPRArgs{
 				conf:        conf,
 				repo:        repo.GetName() + "-enterprise",
-				prBranch:    "mender-test-bot:" + PRBranchName,
+				prBranch:    githubBotName + ":" + PRBranchName,
 				baseBranch:  branchRef,
 				message:     fmt.Sprintf("[Bot] %s", pr.GetTitle()),
 				messageBody: fmt.Sprintf("Original PR: %s\n\n%s", PRURL, pr.GetBody()),
@@ -142,7 +142,7 @@ func createPRBranchOnEnterprise(log *logrus.Entry, repo, branchName, PRNumber, P
 		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	repoURL := getRemoteURLGitHub(conf.githubProtocol, "mendersoftware", repo)
+	repoURL := getRemoteURLGitHub(conf.githubProtocol, githubOrganization, repo)
 	gitcmd = exec.Command("git", "remote", "add", "opensource", repoURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
@@ -150,7 +150,7 @@ func createPRBranchOnEnterprise(log *logrus.Entry, repo, branchName, PRNumber, P
 		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	repoURL = getRemoteURLGitHub(conf.githubProtocol, "mendersoftware", repo+"-enterprise")
+	repoURL = getRemoteURLGitHub(conf.githubProtocol, githubOrganization, repo+"-enterprise")
 	gitcmd = exec.Command("git", "remote", "add", "enterprise", repoURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
@@ -158,17 +158,17 @@ func createPRBranchOnEnterprise(log *logrus.Entry, repo, branchName, PRNumber, P
 		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	repoURL = getRemoteURLGitHub(conf.githubProtocol, "mender-test-bot", repo+"-enterprise")
-	gitcmd = exec.Command("git", "remote", "add", "mender-test-bot", repoURL)
+	repoURL = getRemoteURLGitHub(conf.githubProtocol, githubBotName, repo+"-enterprise")
+	gitcmd = exec.Command("git", "remote", "add", githubBotName, repoURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
 	if err != nil {
 		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	// Set the local name to 'mender-test-bot', and the local
+	// Set the local name to the github bot name, and the local
 	// email to 'mender@northern.tech'
-	gitcmd = exec.Command("git", "config", "--add", "user.name", "mender-test-bot")
+	gitcmd = exec.Command("git", "config", "--add", "user.name", githubBotName)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
 	if err != nil {
@@ -236,8 +236,8 @@ func createPRBranchOnEnterprise(log *logrus.Entry, repo, branchName, PRNumber, P
 		}
 	}
 
-	// Push the branch to the mender-test-bot's own fork
-	gitcmd = exec.Command("git", "push", "--set-upstream", "mender-test-bot", PRBranchName)
+	// Push the branch to the bot's own fork
+	gitcmd = exec.Command("git", "push", "--set-upstream", githubBotName, PRBranchName)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
 	if err != nil {
@@ -277,7 +277,7 @@ func createPullRequestFromTestBotFork(args createPRArgs) (*github.PullRequest, e
 	}
 
 	client := clientgithub.NewGitHubClient(args.conf.githubToken)
-	pr, err := client.CreatePullRequest(context.Background(), "mendersoftware", args.repo, newPR)
+	pr, err := client.CreatePullRequest(context.Background(), githubOrganization, args.repo, newPR)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create the PR for: (%s) %v", args.repo, err)
 	}
@@ -311,25 +311,25 @@ This can be done by following:
 <details>
     <summary><small>this</small> recipe</summary><p>
 
-1. Make sure that the 'mender-test-bot' remote is present in your repository, or else add it with:
-    1. {{.BackQuote}}git remote add mender-test-bot git@github.com:mender-test-bot/{{.Repo}}.git{{.BackQuote}}
+1. Make sure that the '{{.GitHubBotName}}' remote is present in your repository, or else add it with:
+    1. {{.BackQuote}}git remote add {{.GitHubBotName}} git@github.com:{{.GitHubBotName}}/{{.Repo}}.git{{.BackQuote}}
 
 2. Fetch the remote branches
     1. {{.BackQuote}}git fetch origin {{.BranchName}}:localtmp{{.BackQuote}}
-    2. {{.BackQuote}}git fetch mender-test-bot {{.PRBranchName}}{{.BackQuote}}
+    2. {{.BackQuote}}git fetch {{.GitHubBotName}} {{.PRBranchName}}{{.BackQuote}}
 
 3. Checkout the localtmp branch
     1. {{.BackQuote}}git checkout localtmp{{.BackQuote}}
 
 4. Merge the branch into the PR branch
-    1. {{.BackQuote}}git merge mender-test-bot/{{.PRBranchName}}{{.BackQuote}}
+    1. {{.BackQuote}}git merge {{.GitHubBotName}}/{{.PRBranchName}}{{.BackQuote}}
 
 5. Resolve all conflicts
 
 6. Commit the merged changes
 
 7. Push to the PR branch
-    1. {{.BackQuote}}git push mender-test-bot localtmp:{{.PRBranchName}}{{.BackQuote}}
+    1. {{.BackQuote}}git push {{.GitHubBotName}} localtmp:{{.PRBranchName}}{{.BackQuote}}
 
  </p></details>
 `
@@ -339,17 +339,19 @@ This can be done by following:
 		}
 		var buf bytes.Buffer
 		if err := tmpl.Execute(&buf, struct {
-			UserName     string
-			Repo         string
-			PRBranchName string
-			BranchName   string
-			BackQuote    string
+			UserName      string
+			Repo          string
+			PRBranchName  string
+			BranchName    string
+			BackQuote     string
+			GitHubBotName string
 		}{
-			UserName:     args.userName,
-			Repo:         args.repo,
-			PRBranchName: args.prBranchName,
-			BranchName:   args.branchName,
-			BackQuote:    "`",
+			UserName:      args.userName,
+			Repo:          args.repo,
+			PRBranchName:  args.prBranchName,
+			BranchName:    args.branchName,
+			BackQuote:     "`",
+			GitHubBotName: githubBotName,
 		}); err != nil {
 			log.Errorf("Failed to execute the merge-conflict PR template string. Error: %s", err.Error())
 		}
@@ -360,5 +362,5 @@ This can be done by following:
 	}
 
 	client := clientgithub.NewGitHubClient(args.conf.githubToken)
-	return client.CreateComment(context.Background(), "mendersoftware", args.repo, args.pr.GetNumber(), &comment)
+	return client.CreateComment(context.Background(), githubOrganization, args.repo, args.pr.GetNumber(), &comment)
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -118,6 +117,15 @@ const (
 	featureBranchPrefix = "feature-"
 )
 
+const (
+	githubOrganization = "mendersoftware"
+	githubBotName      = "mender-test-bot"
+)
+
+const (
+	commandStartPipeline = "start pipeline"
+)
+
 func getConfig() (*config, error) {
 	var repositoryWatchListPipeline []string
 	var repositoryWatchListSync []string
@@ -141,7 +149,6 @@ func getConfig() (*config, error) {
 	}
 
 	watchRepositoriesTriggerPipeline, ok := os.LookupEnv("WATCH_REPOS_PIPELINE")
-
 	if ok {
 		repositoryWatchListPipeline = strings.Split(watchRepositoriesTriggerPipeline, ",")
 	} else {
@@ -149,7 +156,6 @@ func getConfig() (*config, error) {
 	}
 
 	watchRepositoriesGitLabSync, ok := os.LookupEnv("WATCH_REPOS_SYNC")
-
 	if ok {
 		repositoryWatchListSync = strings.Split(watchRepositoriesGitLabSync, ",")
 	} else {
@@ -203,105 +209,25 @@ func getCustomLoggerFromContext(ctx *gin.Context) *logrus.Entry {
 	return logrus.WithField("delivery", deliveryID)
 }
 
-func processGitHubWebhook(ctx *gin.Context, payload []byte, githubClient clientgithub.Client, conf *config) {
-
+func processGitHubWebhookRequest(ctx *gin.Context, payload []byte, githubClient clientgithub.Client, conf *config) {
 	webhookType := github.WebHookType(ctx.Request)
 	webhookEvent, _ := github.ParseWebHook(github.WebHookType(ctx.Request), payload)
+	_ = processGitHubWebhook(ctx, webhookType, webhookEvent, githubClient, conf)
+}
 
-	log := getCustomLoggerFromContext(ctx)
-
-	if webhookType == "pull_request" {
+func processGitHubWebhook(ctx *gin.Context, webhookType string, webhookEvent interface{}, githubClient clientgithub.Client, conf *config) error {
+	switch webhookType {
+	case "pull_request":
 		pr := webhookEvent.(*github.PullRequestEvent)
-
-		// Do not run if the PR is a draft
-		if pr.GetPullRequest().GetDraft() {
-			log.Infof("The PR: %s/%d is a draft. Do not run tests", pr.GetRepo().GetName(), pr.GetNumber())
-			return
-		}
-
-		if isDependabotPR, err := maybeVendorDependabotPR(log, pr, conf); isDependabotPR {
-			if err != nil {
-				log.Errorf("maybeVendorDependabotPR: %v", err)
-			}
-			return
-		}
-
-		action := pr.GetAction()
-
-		// To run component's Pipeline create a branch in GitLab, regardless of the PR
-		// coming from a mendersoftware member or not (equivalent to the old Travis tests)
-		if err := createPullRequestBranch(log, *pr.Organization.Login, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action, conf); err != nil {
-			log.Errorf("Could not create PR branch: %s", err.Error())
-		}
-
-		// Delete merged pr branches in GitLab
-		if err := deleteStaleGitlabPRBranch(log, pr, conf); err != nil {
-			log.Errorf("Failed to delete the stale PR branch after the PR: %v was merged or closed. Error: %v", pr, err)
-		}
-
-		// make sure we only parse one pr at a time, since we use release_tool
-		mutex.Lock()
-
-		// If the pr was merged, suggest cherry-picks
-		if err := suggestCherryPicks(log, pr, githubClient, conf); err != nil {
-			log.Errorf("Failed to suggest cherry picks for the pr %v. Error: %v", pr, err)
-		}
-
-		// release the mutex
-		mutex.Unlock()
-
-		// Continue to the integration Pipeline only for mendersoftware members
-		if member := githubClient.IsOrganizationMember(ctx, "mendersoftware", pr.Sender.GetLogin()); !member {
-			log.Warnf("%s is making a pullrequest, but he/she is not a member of mendersoftware, ignoring", pr.Sender.GetLogin())
-			return
-		}
-
-		// make sure we only parse one pr at a time, since we use release_tool
-		mutex.Lock()
-
-		builds := parsePullRequest(log, conf, action, pr)
-		log.Infof("%s:%d triggered %d builds: \n", *pr.Repo.Name, pr.GetNumber(), len(builds))
-
-		// First check if the PR has been merged. If so, stop
-		// the pipeline, and do nothing else.
-		if err := stopBuildsOfStalePRs(log, pr, conf); err != nil {
-			log.Errorf("Failed to stop a stale build after the PR: %v was merged or closed. Error: %v", pr, err)
-		}
-
-		// Keep the OS and Enterprise repos in sync
-		if err := syncIfOSHasEnterpriseRepo(log, conf, pr); err != nil {
-			log.Errorf("Failed to sync the OS and Enterprise repos: %s", err.Error())
-		}
-
-		// release the mutex
-		mutex.Unlock()
-
-		for idx, build := range builds {
-			log.Infof("%d: "+spew.Sdump(build)+"\n", idx+1)
-			if build.repo == "meta-mender" && build.baseBranch == "master-next" {
-				log.Info("Skipping build targeting meta-mender:master-next")
-				continue
-			}
-			if err := triggerBuild(log, conf, &build, pr); err != nil {
-				log.Errorf("Could not start build: %s", err.Error())
-			}
-		}
-	} else if webhookType == "push" {
+		return processGitHubPullRequest(ctx, pr, githubClient, conf)
+	case "push":
 		push := webhookEvent.(*github.PushEvent)
-		repoName := push.GetRepo().GetName()
-		repoOrg := push.GetRepo().GetOrganization()
-		refName := push.GetRef()
-		log.Debugf("Got push event :: repo %s :: ref %s", repoName, refName)
-		for _, repo := range conf.watchRepositoriesGitLabSync {
-			if repoName == repo {
-				err := syncRemoteRef(log, repoOrg, repoName, refName, conf)
-				if err != nil {
-					log.Errorf("Could not sync branch: %s", err.Error())
-				}
-				break
-			}
-		}
+		return processGitHubPush(ctx, push, githubClient, conf)
+	case "issue_comment":
+		comment := webhookEvent.(*github.IssueCommentEvent)
+		return processGitHubComment(ctx, comment, githubClient, conf)
 	}
+	return nil
 }
 
 func main() {
@@ -323,11 +249,8 @@ func main() {
 			logrus.Warnln("payload failed to validate, ignoring.")
 			return
 		}
-
 		context.Set("delivery", github.DeliveryID(context.Request))
-
-		go processGitHubWebhook(context, payload, githubClient, conf)
-
+		go processGitHubWebhookRequest(context, payload, githubClient, conf)
 	})
 
 	// 200 replay for the loadbalancer

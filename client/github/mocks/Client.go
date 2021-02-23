@@ -51,6 +51,29 @@ func (_m *Client) CreatePullRequest(ctx context.Context, org string, repo string
 	return r0, r1
 }
 
+// GetPullRequest provides a mock function with given fields: ctx, org, repo, pr
+func (_m *Client) GetPullRequest(ctx context.Context, org string, repo string, pr int) (*github.PullRequest, error) {
+	ret := _m.Called(ctx, org, repo, pr)
+
+	var r0 *github.PullRequest
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, int) *github.PullRequest); ok {
+		r0 = rf(ctx, org, repo, pr)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*github.PullRequest)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, string, string, int) error); ok {
+		r1 = rf(ctx, org, repo, pr)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // IsOrganizationMember provides a mock function with given fields: ctx, org, user
 func (_m *Client) IsOrganizationMember(ctx context.Context, org string, user string) bool {
 	ret := _m.Called(ctx, org, user)

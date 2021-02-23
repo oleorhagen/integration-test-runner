@@ -39,7 +39,7 @@ func maybeVendorDependabotPR(log *logrus.Entry, pr *github.PullRequestEvent, con
 	}
 	defer os.RemoveAll(tmpdir)
 
-	repoURL := getRemoteURLGitHub(conf.githubProtocol, "mendersoftware", repo)
+	repoURL := getRemoteURLGitHub(conf.githubProtocol, githubOrganization, repo)
 	cmd := exec.Command("git", "clone", "--single-branch", "--branch", branchName, repoURL)
 	cmd.Dir = tmpdir
 	out, err := cmd.CombinedOutput()

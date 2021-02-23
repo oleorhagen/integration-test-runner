@@ -62,7 +62,7 @@ func suggestCherryPicks(log *logrus.Entry, pr *github.PullRequestEvent, githubCl
 		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	repoURL := getRemoteURLGitHub(conf.githubProtocol, "mendersoftware", repo)
+	repoURL := getRemoteURLGitHub(conf.githubProtocol, githubOrganization, repo)
 	gitcmd = exec.Command("git", "remote", "add", "github", repoURL)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
@@ -154,7 +154,7 @@ Hello :smile_cat: This PR contains changelog entries. Please, verify the need of
 	comment := github.IssueComment{
 		Body: &commentBody,
 	}
-	if err := githubClient.CreateComment(context.Background(), "mendersoftware",
+	if err := githubClient.CreateComment(context.Background(), githubOrganization,
 		pr.GetRepo().GetName(), pr.GetNumber(), &comment); err != nil {
 		log.Infof("Failed to comment on the pr: %v, Error: %s", pr, err.Error())
 		return err

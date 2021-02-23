@@ -12,6 +12,7 @@ type Client interface {
 	CreateComment(ctx context.Context, org string, repo string, number int, comment *github.IssueComment) error
 	IsOrganizationMember(ctx context.Context, org string, user string) bool
 	CreatePullRequest(ctx context.Context, org string, repo string, pr *github.NewPullRequest) (*github.PullRequest, error)
+	GetPullRequest(ctx context.Context, org string, repo string, pr int) (*github.PullRequest, error)
 }
 
 type gitHubClient struct {
@@ -43,5 +44,10 @@ func (c *gitHubClient) IsOrganizationMember(ctx context.Context, org string, use
 
 func (c *gitHubClient) CreatePullRequest(ctx context.Context, org string, repo string, pr *github.NewPullRequest) (*github.PullRequest, error) {
 	newPR, _, err := c.client.PullRequests.Create(ctx, org, repo, pr)
+	return newPR, err
+}
+
+func (c *gitHubClient) GetPullRequest(ctx context.Context, org string, repo string, pr int) (*github.PullRequest, error) {
+	newPR, _, err := c.client.PullRequests.Get(ctx, org, repo, pr)
 	return newPR, err
 }
