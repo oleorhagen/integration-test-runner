@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/go-github/v28/github"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 

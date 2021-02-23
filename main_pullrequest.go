@@ -18,7 +18,7 @@ func processGitHubPullRequest(ctx *gin.Context, pr *github.PullRequestEvent, git
 		return nil
 	}
 
-	if isDependabotPR, err := maybeVendorDependabotPR(log, pr, conf); isDependabotPR {
+	if isDependabotPR, err := maybeVendorDependabotPR(log, pr, conf); isDependabotPR || err != nil {
 		if err != nil {
 			log.Errorf("maybeVendorDependabotPR: %v", err)
 		}
