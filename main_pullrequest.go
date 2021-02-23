@@ -79,7 +79,7 @@ func processGitHubPullRequest(ctx *gin.Context, pr *github.PullRequestEvent, git
 	// do not start the builds, inform the user about the `start pipeline` command instead
 	if len(builds) > 0 {
 		msg := "@" + pr.GetSender().GetLogin() + ", Let me know if you want to start the integration pipeline by mentioning me and the command \"" + commandStartPipeline + "\"."
-		if err := githubClient.CreateComment(ctx, pr.GetOrganization().GetName(), pr.GetRepo().GetName(), pr.GetNumber(), &github.IssueComment{
+		if err := githubClient.CreateComment(ctx, pr.GetOrganization().GetLogin(), pr.GetRepo().GetName(), pr.GetNumber(), &github.IssueComment{
 			Body: github.String(msg),
 		}); err != nil {
 			log.Infof("Failed to comment on the pr: %v, Error: %s", pr, err.Error())
