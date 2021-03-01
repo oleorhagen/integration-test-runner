@@ -100,6 +100,9 @@ var defaultWatchRepositoriesSync = []string{
 	// mender-qa is in fact an open source repo but the project
 	// in GitLab is kept private; hence it requires manual sync
 	"mender-qa",
+	// websites
+	"mender.io",
+	"northern-tech-web",
 }
 
 var qemuBuildRepositories = []string{
