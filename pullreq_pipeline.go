@@ -80,7 +80,7 @@ func deleteStaleGitlabPRBranch(log *logrus.Entry, pr *github.PullRequestEvent, c
 		return nil
 	}
 	repoName := pr.GetRepo().GetName()
-	repoOrg := pr.GetRepo().GetOrganization().GetLogin()
+	repoOrg := pr.GetOrganization().GetLogin()
 
 	tmpdir, err := ioutil.TempDir("", repoName)
 	if err != nil {
