@@ -159,5 +159,22 @@ Hello :smile_cat: This PR contains changelog entries. Please, verify the need of
 		log.Infof("Failed to comment on the pr: %v, Error: %s", pr, err.Error())
 		return err
 	}
+
+	// cherrypick automatically if tags are set on the PR
+
 	return nil
+}
+
+func automaticCherryFromTags(log *logrus.Entry, pr *github.PullRequestEvent,
+	githubClient clientgithub.Client, conf *config) {
+	
+
+	prr := pr.GetPullRequest()
+	labels := prr.Labels
+
+	for _, label := range labels {
+		fmt.Println(label)
+	}
+
+
 }

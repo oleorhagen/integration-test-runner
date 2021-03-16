@@ -6,6 +6,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/gin-gonic/gin v1.4.1-0.20190513021731-8ee9d959a0bc
 	github.com/golang/protobuf v1.3.2-0.20190409050943-e91709a02e0e // indirect
+	github.com/google/go-github v17.0.0+incompatible // indirect
 	github.com/google/go-github/v28 v28.1.1
 	github.com/google/go-querystring v1.0.1-0.20190318165438-c8c88dbee036 // indirect
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect

@@ -14,6 +14,7 @@ import (
 	"text/template"
 
 	"github.com/google/go-github/v28/github"
+	cgit "github.com/mendersoftware/integration-test-runner/git"
 	"github.com/sirupsen/logrus"
 
 	clientgithub "github.com/mendersoftware/integration-test-runner/client/github"
@@ -135,83 +136,28 @@ func createPRBranchOnEnterprise(log *logrus.Entry, repo, branchName, PRNumber, P
 	}
 	defer os.RemoveAll(tmpdir)
 
-	gitcmd := exec.Command("git", "init", ".")
-	gitcmd.Dir = tmpdir
-	out, err := gitcmd.CombinedOutput()
-	if err != nil {
-		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	repoURL := getRemoteURLGitHub(conf.githubProtocol, githubOrganization, repo)
-	gitcmd = exec.Command("git", "remote", "add", "opensource", repoURL)
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	repoURL = getRemoteURLGitHub(conf.githubProtocol, githubOrganization, repo+"-enterprise")
-	gitcmd = exec.Command("git", "remote", "add", "enterprise", repoURL)
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	repoURL = getRemoteURLGitHub(conf.githubProtocol, githubBotName, repo+"-enterprise")
-	gitcmd = exec.Command("git", "remote", "add", githubBotName, repoURL)
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	// Set the local name to the github bot name, and the local
-	// email to 'mender@northern.tech'
-	gitcmd = exec.Command("git", "config", "--add", "user.name", githubBotName)
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-	gitcmd = exec.Command("git", "config", "--add", "user.email", "mender@northern.tech")
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	// Fetch the branch which we are going to sync
-	gitcmd = exec.Command("git", "fetch", "opensource", branchName)
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	// Fetch the Enterprise branch in which to merge into, and create the PR branch
-	gitcmd = exec.Command("git", "fetch", "enterprise", branchName+":"+PRBranchName)
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	// Checkout the enterprise PR branch
-	gitcmd = exec.Command("git", "checkout", PRBranchName)
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return false, fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
+	err = cgit.Commands(
+		cgit.Command("init", "."),
+		cgit.Command("remote", "add", "opensource",
+			getRemoteURLGitHub(conf.githubProtocol, githubOrganization, repo)),
+		cgit.Command("remote", "add", "enterprise",
+			getRemoteURLGitHub(conf.githubProtocol, githubOrganization, repo+"-enterprise")),
+		cgit.Command("remote", "add",githubBotName,
+			getRemoteURLGitHub(conf.githubProtocol, githubBotName, repo+"-enterprise")),
+		cgit.Command("config", "--add", "user.name", githubBotName),
+		cgit.Command("config", "--add", "user.email", "mender@northern.tech"),
+		cgit.Command("fetch", "opensource", branchName),
+		cgit.Command("git", "fetch", "enterprise", branchName+":"+PRBranchName),
+		cgit.Command("checkout", PRBranchName).Collect(bytes.NewBuffer(nil)),
+	)
 
 	// Merge the OS branch into the PR branch
 	mergeMsg := fmt.Sprintf("Merge OS base branch: (%s) including PR: (%s) into Enterprise: (%[1]s)",
 		branchName, PRNumber)
 	log.Debug("Trying to " + mergeMsg)
-	gitcmd = exec.Command("git", "merge", "-m", mergeMsg, "opensource/"+branchName)
+	gitcmd := exec.Command("git", "merge", "-m", mergeMsg, "opensource/"+branchName)
 	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
+	out, err := gitcmd.CombinedOutput()
 	merged = true
 	if err != nil {
 		merged = false
