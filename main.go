@@ -103,6 +103,8 @@ var defaultWatchRepositoriesSync = []string{
 	// websites
 	"mender.io",
 	"northern-tech-web",
+	// tmp repo - it is private but will be merged/removed later
+	"mender-python-client-dev",
 }
 
 var qemuBuildRepositories = []string{
