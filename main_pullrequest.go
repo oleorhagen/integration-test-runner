@@ -18,13 +18,6 @@ func processGitHubPullRequest(ctx *gin.Context, pr *github.PullRequestEvent, git
 		return nil
 	}
 
-	if isDependabotPR, err := maybeVendorDependabotPR(log, pr, conf); isDependabotPR || err != nil {
-		if err != nil {
-			log.Errorf("maybeVendorDependabotPR: %v", err)
-		}
-		return err
-	}
-
 	action := pr.GetAction()
 
 	// To run component's Pipeline create a branch in GitLab, regardless of the PR
