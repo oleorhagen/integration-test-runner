@@ -27,6 +27,12 @@ func processGitHubComment(ctx *gin.Context, comment *github.IssueCommentEvent, g
 		return nil
 	}
 
+	// but ignore comments from myself
+	if comment.Sender.GetLogin() == "mender-test-bot" {
+		log.Warnf("%s commented, probably giving instructions, ignoring", comment.Sender.GetLogin())
+		return nil
+	}
+
 	// filter comments mentioning the bot
 	body := comment.Comment.GetBody()
 	if !strings.Contains(body, "@"+githubBotName) {
