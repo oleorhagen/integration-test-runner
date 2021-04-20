@@ -85,8 +85,8 @@ func TestSuggestCherryPicks(t *testing.T) {
 			comment: &github.IssueComment{
 				Body: github.String(`
 Hello :smile_cat: This PR contains changelog entries. Please, verify the need of backporting it to the following release branches:
+1.4.x (release 2.7.x)
 1.3.x (release 2.6.x)
-1.2.x (release 2.5.x)
 1.1.x (release 2.4.x)
 `),
 			},
@@ -109,6 +109,30 @@ Hello :smile_cat: This PR contains changelog entries. Please, verify the need of
 			comment: &github.IssueComment{
 				Body: github.String(`
 Hello :smile_cat: This PR contains changelog entries. Please, verify the need of backporting it to the following release branches:
+1.1.x (release 2.7.x)
+1.0.x (release 2.6.x)
+`),
+			},
+		},
+		"cherry picks, changelogs, syntax with no space": {
+			pr: &github.PullRequestEvent{
+				Action: github.String("closed"),
+				Number: github.Int(29),
+				PullRequest: &github.PullRequest{
+					Base: &github.PullRequestBranch{
+						Ref: github.String("master"),
+						SHA: github.String("c138b0256ec874bcd16d4cae4b598b8615b2d415"),
+					},
+					Merged: github.Bool(true),
+				},
+				Repo: &github.Repository{
+					Name: github.String("mender-connect"),
+				},
+			},
+			comment: &github.IssueComment{
+				Body: github.String(`
+Hello :smile_cat: This PR contains changelog entries. Please, verify the need of backporting it to the following release branches:
+1.1.x (release 2.7.x)
 1.0.x (release 2.6.x)
 `),
 			},
