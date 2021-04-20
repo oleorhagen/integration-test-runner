@@ -90,7 +90,7 @@ func suggestCherryPicks(log *logrus.Entry, pr *github.PullRequestEvent, githubCl
 
 	// count the number commits with Changelog entries
 	baseSHA := pr.GetPullRequest().GetBase().GetSHA()
-	countCmd := exec.Command("sh", "-c", "git log "+baseSHA+"...pr_"+prNumber+" | grep -i -e \"^    Changelog: \" | grep -v -i -e \"^    Changelog: *none\" | wc -l")
+	countCmd := exec.Command("sh", "-c", "git log "+baseSHA+"...pr_"+prNumber+" | grep -i -e \"^    Changelog:\" | grep -v -i -e \"^    Changelog: *none\" | wc -l")
 	countCmd.Dir = tmpdir
 	out, err = countCmd.CombinedOutput()
 	if err != nil {
