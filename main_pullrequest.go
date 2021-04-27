@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/go-github/v28/github"
+	"github.com/sirupsen/logrus"
 
 	clientgithub "github.com/mendersoftware/integration-test-runner/client/github"
 )
@@ -71,13 +74,45 @@ func processGitHubPullRequest(ctx *gin.Context, pr *github.PullRequestEvent, git
 
 	// do not start the builds, inform the user about the `start pipeline` command instead
 	if len(builds) > 0 {
-		msg := "@" + pr.GetSender().GetLogin() + ", Let me know if you want to start the integration pipeline by mentioning me and the command \"" + commandStartPipeline + "\"."
-		if err := githubClient.CreateComment(ctx, pr.GetOrganization().GetLogin(), pr.GetRepo().GetName(), pr.GetNumber(), &github.IssueComment{
-			Body: github.String(msg),
-		}); err != nil {
-			log.Infof("Failed to comment on the pr: %v, Error: %s", pr, err.Error())
+		// Only comment, if not already commented on a PR
+		botCommentString := ", Let me know if you want to start the integration pipeline by mentioning me and the command \""
+		if !botHasAlreadyCommentedOnPR(log, githubClient, pr, botCommentString) {
+
+			msg := "@" + pr.GetSender().GetLogin() + botCommentString + commandStartPipeline + "\"."
+			if err := githubClient.CreateComment(ctx, pr.GetOrganization().GetLogin(), pr.GetRepo().GetName(), pr.GetNumber(), &github.IssueComment{
+				Body: github.String(msg),
+			}); err != nil {
+				log.Infof("Failed to comment on the pr: %v, Error: %s", pr, err.Error())
+			}
+		} else {
+			log.Infof(
+				"I have already commented on the pr: %s/%d, no need to keep on nagging",
+				pr.GetRepo().GetName(), pr.GetNumber())
 		}
 	}
 
 	return nil
+}
+
+func botHasAlreadyCommentedOnPR(log *logrus.Entry, githubClient clientgithub.Client, pr *github.PullRequestEvent, botComment string) bool {
+	comments, err := githubClient.ListComments(
+		context.Background(),
+		pr.GetRepo().GetOwner().GetName(),
+		pr.GetRepo().GetName(),
+		pr.GetNumber(),
+		&github.IssueListCommentsOptions{
+			Sort:      "created",
+			Direction: "asc",
+		})
+	if err != nil {
+		log.Errorf("Failed to list the comments on PR: %s/%d, err: '%s'",
+			pr.GetRepo().GetName(), pr.GetNumber(), err)
+		return false
+	}
+	for _, comment := range comments {
+		if comment.Body != nil && strings.Contains(*comment.Body, botComment) {
+			return true
+		}
+	}
+	return false
 }
