@@ -167,12 +167,12 @@ Hello :smile_cat: This PR contains changelog entries. Please, verify the need of
 
 func automaticCherryFromTags(log *logrus.Entry, pr *github.PullRequestEvent,
 	githubClient clientgithub.Client, conf *config) {
-	
 
 	prr := pr.GetPullRequest()
 	labels := prr.Labels
 
 	for _, label := range labels {
+		// If label equals a release version of Mender, then...
 		fmt.Println(label)
 	}
 
