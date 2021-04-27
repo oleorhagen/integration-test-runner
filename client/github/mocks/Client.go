@@ -87,3 +87,26 @@ func (_m *Client) IsOrganizationMember(ctx context.Context, org string, user str
 
 	return r0
 }
+
+// ListComments provides a mock function with given fields: ctx, owner, repo, number, opts
+func (_m *Client) ListComments(ctx context.Context, owner string, repo string, number int, opts *github.IssueListCommentsOptions) ([]*github.IssueComment, error) {
+	ret := _m.Called(ctx, owner, repo, number, opts)
+
+	var r0 []*github.IssueComment
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, int, *github.IssueListCommentsOptions) []*github.IssueComment); ok {
+		r0 = rf(ctx, owner, repo, number, opts)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*github.IssueComment)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, string, string, int, *github.IssueListCommentsOptions) error); ok {
+		r1 = rf(ctx, owner, repo, number, opts)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
