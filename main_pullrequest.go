@@ -97,7 +97,7 @@ func processGitHubPullRequest(ctx *gin.Context, pr *github.PullRequestEvent, git
 func botHasAlreadyCommentedOnPR(log *logrus.Entry, githubClient clientgithub.Client, pr *github.PullRequestEvent, botComment string) bool {
 	comments, err := githubClient.ListComments(
 		context.Background(),
-		pr.GetRepo().GetOwner().GetName(),
+		githubOrganization,
 		pr.GetRepo().GetName(),
 		pr.GetNumber(),
 		&github.IssueListCommentsOptions{
