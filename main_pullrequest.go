@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -25,7 +24,7 @@ func processGitHubPullRequest(ctx *gin.Context, pr *github.PullRequestEvent, git
 
 	// To run component's Pipeline create a branch in GitLab, regardless of the PR
 	// coming from an organization member or not (equivalent to the old Travis tests)
-	if err := createPullRequestBranch(log, *pr.Organization.Login, *pr.Repo.Name, strconv.Itoa(pr.GetNumber()), action, conf); err != nil {
+	if err := createPullRequestBranch(log, pr, conf); err != nil {
 		log.Errorf("Could not create PR branch: %s", err.Error())
 	}
 
