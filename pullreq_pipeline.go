@@ -16,7 +16,13 @@ func createPullRequestBranch(log *logrus.Entry, pr *github.PullRequestEvent, con
 	action := pr.GetAction()
 	if action != "opened" && action != "edited" && action != "reopened" &&
 		action != "synchronize" && action != "ready_for_review" {
-		log.Infof("Action %s, ignoring", action)
+		log.Infof("createPullRequestBranch: Action %s, ignoring", action)
+		return nil
+	}
+
+	prHeadFork := pr.GetPullRequest().GetHead().GetUser().GetLogin()
+	if prHeadFork == "mendersoftware" {
+		log.Debug("createPullRequestBranch: PR head is a branch in mendersoftware, ignoring")
 		return nil
 	}
 
