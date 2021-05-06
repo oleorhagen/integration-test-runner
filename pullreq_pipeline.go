@@ -5,18 +5,30 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"strconv"
 
 	"github.com/google/go-github/v28/github"
 	"github.com/sirupsen/logrus"
 )
 
-func createPullRequestBranch(log *logrus.Entry, org, repo, pr, action string, conf *config) error {
+func createPullRequestBranch(log *logrus.Entry, pr *github.PullRequestEvent, conf *config) error {
 
+	action := pr.GetAction()
 	if action != "opened" && action != "edited" && action != "reopened" &&
 		action != "synchronize" && action != "ready_for_review" {
-		log.Infof("Action %s, ignoring", action)
+		log.Infof("createPullRequestBranch: Action %s, ignoring", action)
 		return nil
 	}
+
+	prHeadFork := pr.GetPullRequest().GetHead().GetUser().GetLogin()
+	if prHeadFork == "mendersoftware" {
+		log.Debug("createPullRequestBranch: PR head is a branch in mendersoftware, ignoring")
+		return nil
+	}
+
+	repo := pr.GetRepo().GetName()
+	org := pr.GetOrganization().GetLogin()
+	prNum := strconv.Itoa(pr.GetNumber())
 
 	tmpdir, err := ioutil.TempDir("", repo)
 	if err != nil {
@@ -51,8 +63,8 @@ func createPullRequestBranch(log *logrus.Entry, org, repo, pr, action string, co
 		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
-	prBranchName := "pr_" + pr
-	gitcmd = exec.Command("git", "fetch", "github", "pull/"+pr+"/head:"+prBranchName)
+	prBranchName := "pr_" + prNum
+	gitcmd = exec.Command("git", "fetch", "github", "pull/"+prNum+"/head:"+prBranchName)
 	gitcmd.Dir = tmpdir
 	out, err = gitcmd.CombinedOutput()
 	if err != nil {
