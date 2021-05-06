@@ -62,6 +62,7 @@ var defaultWatchRepositoriesPipeline = []string{
 	"mender-connect",
 	"deviceconnect",
 	"deviceconfig",
+	"devicemonitor",
 }
 
 // Mapping https://github.com/<org> -> https://gitlab.com/Northern.tech/<group>
@@ -88,6 +89,7 @@ var defaultWatchRepositoriesSync = []string{
 	"mender-helm",
 	"auditlogs",
 	"mtls-ambassador",
+	"devicemonitor",
 	// client
 	"mender-binary-delta",
 	// docs
