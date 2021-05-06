@@ -29,26 +29,26 @@ func syncRemoteRef(log *logrus.Entry, org, repo, ref string, conf *config) error
 	if strings.Contains(ref, "tags") {
 		tagName := strings.TrimPrefix(ref, "refs/tags/")
 
-		err := git.Command("fetch", "--tags", "github").With(state).Run()
+		_, err := git.Command("fetch", "--tags", "github").With(state).Run()
 		if err != nil {
 			return err
 		}
-		err = git.Command("push", "-f", "gitlab", tagName).With(state).Run()
+		_, err = git.Command("push", "-f", "gitlab", tagName).With(state).Run()
 		if err != nil {
 			return err
 		}
 	} else if strings.Contains(ref, "heads") {
 		branchName := strings.TrimPrefix(ref, "refs/heads/")
 
-		err := git.Command("fetch", "github").With(state).Run()
+		_, err := git.Command("fetch", "github").With(state).Run()
 		if err != nil {
 			return err
 		}
-		err = git.Command("checkout", "-b", branchName, "github/"+branchName).With(state).Run()
+		_, err = git.Command("checkout", "-b", branchName, "github/"+branchName).With(state).Run()
 		if err != nil {
 			return err
 		}
-		err = git.Command("push", "-f", "gitlab", branchName).With(state).Run()
+		_, err = git.Command("push", "-f", "gitlab", branchName).With(state).Run()
 		if err != nil {
 			return err
 		}

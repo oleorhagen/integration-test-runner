@@ -89,6 +89,12 @@ func processGitHubComment(ctx *gin.Context, comment *github.IssueCommentEvent, g
 				log.Errorf("Could not start build: %s", err.Error())
 			}
 		}
+	case strings.Contains(body, commandCherryPickBranch):
+		log.Infof("Attempting to cherry-pick the changes in PR: %v", pr)
+		err = cherryPickPR(log, comment, pr, conf, body, githubClient)
+		if err != nil {
+			log.Error(err)
+		}
 	default:
 		log.Warnf("no command found: %s", body)
 		return nil

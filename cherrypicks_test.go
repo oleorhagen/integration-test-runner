@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/google/go-github/v28/github"
@@ -152,20 +153,20 @@ Hello :smile_cat: This PR contains changelog entries. Please, verify the need of
 		panic(err)
 	}
 
-	for name, tc := range testCases {
+	for name, test := range testCases {
 		t.Run(name, func(t *testing.T) {
 			mclient := &mock_github.Client{}
 			defer mclient.AssertExpectations(t)
 
-			if tc.comment != nil {
+			if test.comment != nil {
 				mclient.On("CreateComment",
 					mock.MatchedBy(func(ctx context.Context) bool {
 						return true
 					}),
 					githubOrganization,
-					*tc.pr.Repo.Name,
-					*tc.pr.Number,
-					tc.comment,
+					*test.pr.Repo.Name,
+					*test.pr.Number,
+					test.comment,
 				).Return(nil)
 			}
 
@@ -175,10 +176,156 @@ Hello :smile_cat: This PR contains changelog entries. Please, verify the need of
 			conf.integrationDirectory = tmpdir
 
 			log := logrus.NewEntry(logrus.StandardLogger())
-			err := suggestCherryPicks(log, tc.pr, mclient, conf)
-			if tc.err != nil {
+			err := suggestCherryPicks(log, test.pr, mclient, conf)
+			if test.err != nil {
 				assert.Error(t, err)
-				assert.EqualError(t, err, tc.err.Error())
+				assert.EqualError(t, err, test.err.Error())
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestCherryTargetBranches(t *testing.T) {
+	tests := map[string]struct {
+		input    string
+		expected []string
+	}{
+		"Success": {
+			input: `
+cherry pick to:
+    * 2.6.x
+    * 2.5.x
+    * 2.4.x
+`,
+			expected: []string{"2.6.x", "2.5.x", "2.4.x"},
+		},
+		"Failure": {
+			input: `cherry pick to:
+ * 2.4.1
+* 2.5.3`,
+			expected: []string{},
+		},
+	}
+
+	for name, test := range tests {
+		t.Log(name)
+		output := parseCherryTargetBranches(test.input)
+		assert.Equal(t, test.expected, output)
+	}
+}
+
+func TestCherryPickToReleaseBranches(t *testing.T) {
+
+	os.Setenv("MENDERGITDRY", "--dry-run")
+
+	tests := map[string]struct {
+		pr       *github.PullRequest
+		err      error
+		comment  *github.IssueCommentEvent
+		body     string
+		expected []string
+	}{
+		"cherry picks, changelogs": {
+			pr: &github.PullRequest{
+				Number: github.Int(749),
+				Base: &github.PullRequestBranch{
+					Ref: github.String("master"),
+					SHA: github.String("04670761d39da501361501e2a4e96581b0645225"),
+				},
+				Head: &github.PullRequestBranch{
+					Ref: github.String("pr-branch"),
+					SHA: github.String("33375381a411a07429cac9fb6f800814e21dc2b8"),
+				},
+				Merged: github.Bool(true),
+			},
+			comment: &github.IssueCommentEvent{
+				Issue: &github.Issue{
+					Title: github.String("MEN-4703"),
+				},
+				Repo: &github.Repository{
+					Name: github.String("mender"),
+				},
+				Comment: &github.IssueComment{
+					Body: github.String(`
+cherry-pick to:
+* 2.6.x
+* 2.5.x
+* 2.4.x
+`),
+				},
+			},
+			body: `
+cherry-pick to:
+* 2.6.x
+* 2.5.x
+* 2.4.x
+`,
+			expected: []string{`I did my very best, and this is the result of the cherry pick operation:`,
+				`* 2.6.x Had merge conflicts, you will have to fix this yourself :crying_cat_face:`,
+				`* 2.5.x :white_check_mark: #749`,
+				`* 2.4.x Had merge conflicts, you will have to fix this yourself :crying_cat_face:`,
+			},
+		},
+	}
+
+	tmpdir, err := ioutil.TempDir("", "TestCherryPickToRelease")
+	if err != nil {
+		t.FailNow()
+	}
+	defer os.RemoveAll(tmpdir)
+
+	gitSetup := exec.Command("git", "clone", "https://github.com/mendersoftware/integration.git", tmpdir)
+	gitSetup.Dir = tmpdir
+	_, err = gitSetup.CombinedOutput()
+	if err != nil {
+		t.FailNow()
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			mclient := &mock_github.Client{}
+			defer mclient.AssertExpectations(t)
+
+			mclient.On("CreateComment",
+				mock.MatchedBy(func(ctx context.Context) bool {
+					return true
+				}),
+				githubOrganization,
+				*test.comment.Repo.Name,
+				*test.pr.Number,
+				mock.MatchedBy(func(i *github.IssueComment) bool {
+					for _, expected := range test.expected {
+						if !strings.Contains(*i.Body, expected) {
+							return false
+						}
+					}
+					return true
+				}),
+			).Return(nil)
+
+			mclient.On("CreatePullRequest",
+				mock.MatchedBy(func(ctx context.Context) bool {
+					return true
+				}),
+				githubOrganization,
+				test.comment.GetRepo().GetName(),
+				mock.MatchedBy(func(_ *github.NewPullRequest) bool { return true }),
+			).Return(nil, nil)
+
+			conf := &config{
+				githubProtocol: GitProtocolHTTP,
+			}
+			conf.integrationDirectory = tmpdir
+
+			log := logrus.NewEntry(logrus.StandardLogger())
+
+			err = cherryPickPR(log, test.comment, test.pr, conf, test.body, mclient)
+
+			if test.err != nil {
+				assert.Error(t, err)
+				assert.EqualError(t, err, test.err.Error())
 			} else {
 				assert.NoError(t, err)
 			}
