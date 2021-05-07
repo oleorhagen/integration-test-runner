@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
-	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -15,6 +13,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	clientgithub "github.com/mendersoftware/integration-test-runner/client/github"
+	"github.com/mendersoftware/integration-test-runner/git"
 )
 
 func getLatestIntegrationRelease(number int, conf *config) ([]string, error) {
@@ -49,52 +48,29 @@ func suggestCherryPicks(log *logrus.Entry, pr *github.PullRequestEvent, githubCl
 
 	// initialize the git work area
 	repo := pr.GetRepo().GetName()
-	tmpdir, err := ioutil.TempDir("", repo)
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmpdir)
-
-	gitcmd := exec.Command("git", "init", ".")
-	gitcmd.Dir = tmpdir
-	out, err := gitcmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
 	repoURL := getRemoteURLGitHub(conf.githubProtocol, githubOrganization, repo)
-	gitcmd = exec.Command("git", "remote", "add", "github", repoURL)
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	// fetch the master branch
-	gitcmd = exec.Command("git", "fetch", "github", "master:local")
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	// fetch the PR branch
 	prNumber := strconv.Itoa(pr.GetNumber())
 	prBranchName := "pr_" + prNumber
-	gitcmd = exec.Command("git", "fetch", "github", "pull/"+prNumber+"/head:"+prBranchName)
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
+	state, err := git.Commands(
+		git.Command("init", "."),
+		git.Command("remote", "add", "github", repoURL),
+		git.Command("fetch", "github", "master:local"),
+		git.Command("fetch", "github", "pull/"+prNumber+"/head:"+prBranchName),
+	)
+	defer state.Cleanup()
 	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
+		return err
 	}
 
 	// count the number commits with Changelog entries
 	baseSHA := pr.GetPullRequest().GetBase().GetSHA()
-	countCmd := exec.Command("sh", "-c", "git log "+baseSHA+"...pr_"+prNumber+" | grep -i -e \"^    Changelog:\" | grep -v -i -e \"^    Changelog: *none\" | wc -l")
-	countCmd.Dir = tmpdir
-	out, err = countCmd.CombinedOutput()
+	countCmd := exec.Command(
+		"sh", "-c",
+		"git log "+baseSHA+"...pr_"+prNumber+" | grep -i -e \"^    Changelog:\" | grep -v -i -e \"^    Changelog: *none\" | wc -l")
+	countCmd.Dir = state.Dir
+	out, err := countCmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
+		return fmt.Errorf("%v returned error: %s: %s", countCmd.Args, out, err.Error())
 	}
 
 	changelogs, _ := strconv.Atoi(strings.TrimSpace(string(out)))
@@ -104,11 +80,9 @@ func suggestCherryPicks(log *logrus.Entry, pr *github.PullRequestEvent, githubCl
 	}
 
 	// fetch all the branches
-	gitcmd = exec.Command("git", "fetch", "github")
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
+	err = git.Command("fetch", "github").With(state).Run()
 	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
+		return err
 	}
 
 	// get list of release versions

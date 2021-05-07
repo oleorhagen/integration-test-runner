@@ -2,87 +2,49 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
-	"os"
-	"os/exec"
 	"strings"
 
+	"github.com/mendersoftware/integration-test-runner/git"
 	"github.com/sirupsen/logrus"
 )
 
 func syncRemoteRef(log *logrus.Entry, org, repo, ref string, conf *config) error {
 
-	tmpdir, err := ioutil.TempDir("", repo)
+	state, err := git.Commands(
+		git.Command("init", "."),
+		git.Command("remote", "add", "github",
+			getRemoteURLGitHub(conf.githubProtocol, githubOrganization, repo)),
+		git.Command(""),
+		git.Command("remote", "add", "gitlab",
+			getRemoteURLGitHub(conf.githubProtocol, githubOrganization, repo)),
+	)
+	defer state.Cleanup()
 	if err != nil {
 		return err
-	}
-	defer os.RemoveAll(tmpdir)
-
-	gitcmd := exec.Command("git", "init", ".")
-	gitcmd.Dir = tmpdir
-	out, err := gitcmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	repoURL := getRemoteURLGitHub(conf.githubProtocol, githubOrganization, repo)
-	gitcmd = exec.Command("git", "remote", "add", "github", repoURL)
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-	}
-
-	remoteURL, err := getRemoteURLGitLab(org, repo)
-	if err != nil {
-		return fmt.Errorf("getRemoteURLGitLab returned error: %s", err.Error())
-	}
-
-	gitcmd = exec.Command("git", "remote", "add", "gitlab", remoteURL)
-	gitcmd.Dir = tmpdir
-	out, err = gitcmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
 	}
 
 	if strings.Contains(ref, "tags") {
 		tagName := strings.TrimPrefix(ref, "refs/tags/")
 
-		gitcmd = exec.Command("git", "fetch", "--tags", "github")
-		gitcmd.Dir = tmpdir
-		out, err = gitcmd.CombinedOutput()
+		state, err = git.Commands(
+			git.Command("fetch", "--tags", "github"),
+			git.Command("push", "-f", "gitlab", tagName),
+		)
+		defer state.Cleanup()
 		if err != nil {
-			return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-		}
-
-		gitcmd = exec.Command("git", "push", "-f", "gitlab", tagName)
-		gitcmd.Dir = tmpdir
-		out, err = gitcmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
+			return err
 		}
 	} else if strings.Contains(ref, "heads") {
 		branchName := strings.TrimPrefix(ref, "refs/heads/")
 
-		gitcmd = exec.Command("git", "fetch", "github")
-		gitcmd.Dir = tmpdir
-		out, err = gitcmd.CombinedOutput()
+		state, err = git.Commands(
+			git.Command("fetch", "github"),
+			git.Command("checkout", "-b", branchName, "github/"+branchName),
+			git.Command("push", "-f", "gitlab", branchName),
+		)
+		defer state.Cleanup()
 		if err != nil {
-			return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-		}
-
-		gitcmd = exec.Command("git", "checkout", "-b", branchName, "github/"+branchName)
-		gitcmd.Dir = tmpdir
-		out, err = gitcmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
-		}
-
-		gitcmd = exec.Command("git", "push", "-f", "gitlab", branchName)
-		gitcmd.Dir = tmpdir
-		out, err = gitcmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("%v returned error: %s: %s", gitcmd.Args, out, err.Error())
+			return err
 		}
 	} else {
 		return fmt.Errorf("Unrecognized ref %s", ref)
