@@ -14,7 +14,6 @@ func syncRemoteRef(log *logrus.Entry, org, repo, ref string, conf *config) error
 		git.Command("init", "."),
 		git.Command("remote", "add", "github",
 			getRemoteURLGitHub(conf.githubProtocol, githubOrganization, repo)),
-		git.Command(""),
 		git.Command("remote", "add", "gitlab",
 			getRemoteURLGitHub(conf.githubProtocol, githubOrganization, repo)),
 	)
