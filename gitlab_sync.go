@@ -10,12 +10,16 @@ import (
 
 func syncRemoteRef(log *logrus.Entry, org, repo, ref string, conf *config) error {
 
+	remoteURLGitLab, err := getRemoteURLGitLab(org, repo)
+	if err != nil {
+		return fmt.Errorf("getRemoteURLGitLab returned error: %s", err.Error())
+	}
+
 	state, err := git.Commands(
 		git.Command("init", "."),
 		git.Command("remote", "add", "github",
 			getRemoteURLGitHub(conf.githubProtocol, githubOrganization, repo)),
-		git.Command("remote", "add", "gitlab",
-			getRemoteURLGitHub(conf.githubProtocol, githubOrganization, repo)),
+		git.Command("remote", "add", "gitlab", remoteURLGitLab),
 	)
 	defer state.Cleanup()
 	if err != nil {
