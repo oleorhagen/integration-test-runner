@@ -139,7 +139,7 @@ func createPRBranchOnEnterprise(log *logrus.Entry, repo, branchName, PRNumber, P
 		git.Command("config", "--add", "user.name", githubBotName),
 		git.Command("config", "--add", "user.email", "mender@northern.tech"),
 		git.Command("fetch", "opensource", branchName),
-		git.Command("git", "fetch", "enterprise", branchName+":"+PRBranchName),
+		git.Command("fetch", "enterprise", branchName+":"+PRBranchName),
 		git.Command("checkout", PRBranchName),
 	)
 	defer state.Cleanup()
